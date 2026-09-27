@@ -4,6 +4,8 @@ from WORLD.AI.goal_system import GoalSystem
 from WORLD.NPCs.npc import NPC
 from WORLD.world import World
 from WORLD.AI.goal import GoalType
+from WORLD.NPCs.memory import Memory
+
 
 
 def create_npc(
@@ -174,3 +176,189 @@ def test_better_relationship_increases_socialize_score():
 
     assert decision.scores[ActionType.SOCIALIZE] == 40
 
+def test_decision_debug_text_shows_scores():
+    world = World()
+
+    rahul = create_npc(
+        location="House 1",
+    )
+
+    world.add_npc(rahul)
+
+    rahul.hunger = 80
+    rahul.energy = 50
+    rahul.food = 1
+
+    decision = DecisionSystem().decide(
+        rahul,
+        world,
+    )
+
+    debug = decision.debug_text(rahul)
+
+    assert "Rahul decision:" in debug
+    assert "eat" in debug
+    assert "sleep" in debug
+    assert "chosen" in debug
+
+def test_schedule_increases_work_score():
+    world = World()
+
+    rahul = create_npc(
+        location="Village Farm",
+    )
+
+    world.add_npc(rahul)
+
+    rahul.energy = 80
+    rahul.hunger = 20
+
+    # Rahul is scheduled to be at the farm.
+    rahul.schedule[10] = "House 1"
+    world.clock.hour = 10
+
+    decision = DecisionSystem().decide(
+        rahul,
+        world,
+    )
+
+    assert decision.scores[ActionType.WORK] == 115
+
+
+def test_schedule_increases_work_score():
+    world = World()
+
+    rahul = create_npc(
+        location="Village Farm",
+    )
+
+    world.add_npc(rahul)
+
+    rahul.energy = 80
+    rahul.hunger = 20
+
+    rahul.schedule[10] = "Village Farm"
+    world.clock.hour = 10
+
+    decision = DecisionSystem().decide(
+        rahul,
+        world,
+    )
+
+    assert decision.scores[ActionType.WORK] == 95
+
+def test_relationship_increases_socialize_score():
+    world = World()
+
+    rahul = create_npc(
+        location="House 1",
+    )
+
+    ali = NPC(
+        name="Ali",
+        role="shopkeeper",
+        money=50,
+        home="House 1",
+        location="House 1",
+    )
+
+    world.add_npc(rahul)
+    world.add_npc(ali)
+
+    rahul.change_relationship(
+        ali,
+        50,
+    )
+
+    world.clock.hour = 10
+
+    decision = DecisionSystem().decide(
+        rahul,
+        world,
+    )
+
+    # Base social score:
+    # 10
+    #
+    # Relationship:
+    # 50 // 5 = 10
+    #
+    # Social goal:
+    # +20
+    #
+    # Schedule:
+    # +5
+    #
+    # Total:
+    # 45
+    assert decision.scores[ActionType.SOCIALIZE] == 40
+
+
+def test_social_memory_increases_socialize_score():
+    world = World()
+
+    rahul = create_npc(
+        location="House 1",
+    )
+
+    ali = NPC(
+        name="Ali",
+        role="shopkeeper",
+        money=50,
+        home="House 1",
+        location="House 1",
+    )
+
+    world.add_npc(rahul)
+    world.add_npc(ali)
+
+    rahul.remember(
+        Memory(
+            day=1,
+            hour=10,
+            event="Spent time with Ali",
+            importance=1,
+        )
+    )
+
+    decision = DecisionSystem().decide(
+        rahul,
+        world,
+    )
+
+    assert decision.scores[ActionType.SOCIALIZE] == 40
+
+
+def test_social_memory_increases_socialize_score():
+    world = World()
+
+    rahul = create_npc(
+        location="House 1",
+    )
+
+    ali = NPC(
+        name="Ali",
+        role="shopkeeper",
+        money=50,
+        home="House 1",
+        location="House 1",
+    )
+
+    world.add_npc(rahul)
+    world.add_npc(ali)
+
+    rahul.remember(
+        Memory(
+            day=1,
+            hour=10,
+            event="Spent time with Ali",
+            importance=1,
+        )
+    )
+
+    decision = DecisionSystem().decide(
+        rahul,
+        world,
+    )
+
+    assert decision.scores[ActionType.SOCIALIZE] == 35

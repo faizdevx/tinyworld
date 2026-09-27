@@ -8,6 +8,36 @@ WORK_LOCATIONS = {
 }
 
 
+def _schedule_destination(npc, world):
+    """
+    Return the NPC's explicit scheduled destination
+    for the current hour.
+
+    If there is no schedule entry, return None.
+    """
+    return npc.schedule.get(world.clock.hour)
+
+
+def _has_social_memory(npc, world) -> bool:
+    """
+    Return True if the NPC has a memory related to
+    social interaction.
+    """
+    for memory in npc.memories:
+        event = memory.event.lower()
+
+        if (
+            "social" in event
+            or "spent time" in event
+            or "interact" in event
+            or "talk" in event
+            or "conversation" in event
+        ):
+            return True
+
+    return False
+
+
 def score_action(
     npc,
     action: ActionType,
@@ -59,14 +89,24 @@ def score_action(
             for other in nearby_npcs
         )
 
-        score = 10 + max(best_relationship, 0) // 5
+        score = 10
+        score += max(best_relationship, 0) // 5
+
+        if _has_social_memory(npc, world):
+            score += 5
+
+    else:
+        return 0
 
     # ---------------------------------------------------------
     # Goal influence
     # ---------------------------------------------------------
 
     if GoalType.SATISFY_HUNGER in goals:
-        if action in {ActionType.EAT, ActionType.SHOP}:
+        if action in {
+            ActionType.EAT,
+            ActionType.SHOP,
+        }:
             score += 20
 
     if GoalType.RESTORE_ENERGY in goals:
@@ -80,5 +120,32 @@ def score_action(
     if GoalType.SOCIALIZE in goals:
         if action == ActionType.SOCIALIZE:
             score += 20
+
+    # ---------------------------------------------------------
+    # Schedule influence
+    # ---------------------------------------------------------
+
+    scheduled_destination = _schedule_destination(
+        npc,
+        world,
+    )
+
+    if scheduled_destination is not None:
+
+        if scheduled_destination == npc.location:
+
+            if action == ActionType.WORK:
+                score += 15
+
+            elif action == ActionType.SOCIALIZE:
+                score += 5
+
+        if scheduled_destination == npc.home:
+            if action == ActionType.SLEEP:
+                score += 10
+
+        if scheduled_destination == world.shop.name:
+            if action == ActionType.SHOP:
+                score += 10
 
     return score

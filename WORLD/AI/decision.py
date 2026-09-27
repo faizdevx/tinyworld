@@ -12,6 +12,31 @@ class Decision:
     scores: dict[ActionType, int]
     chosen_action: ActionType
 
+    def debug_text(self, npc) -> str:
+        lines = [
+            f"{npc.name} decision:",
+            "",
+        ]
+
+        if self.goals:
+            lines.append("Goals:")
+            for goal in self.goals:
+                lines.append(f"  - {goal.value}")
+        else:
+            lines.append("Goals:")
+            lines.append("  - none")
+
+        lines.append("")
+        lines.append("Actions:")
+
+        for action, score in self.scores.items():
+            marker = "  ← chosen" if action == self.chosen_action else ""
+            lines.append(
+                f"  {action.value:<10} {score:>3}{marker}"
+            )
+
+        return "\n".join(lines)
+
 
 class DecisionSystem:
     def __init__(self) -> None:
@@ -23,7 +48,6 @@ class DecisionSystem:
         if npc.food > 0:
             actions.append(ActionType.EAT)
 
-        # Sleep is always a possible action.
         actions.append(ActionType.SLEEP)
 
         if npc.location in WORK_LOCATIONS:
@@ -47,8 +71,15 @@ class DecisionSystem:
         return actions
 
     def decide(self, npc, world) -> Decision:
-        goals = self.goal_system.get_goals(npc,world)
-        actions = self.get_actions(npc, world)
+        goals = self.goal_system.get_goals(
+            npc,
+            world,
+        )
+
+        actions = self.get_actions(
+            npc,
+            world,
+        )
 
         scores = {
             action: score_action(

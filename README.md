@@ -614,3 +614,44 @@ Added memory unit tests
 Added social interaction tests
 Added multi-day social persistence integration test
 Full test suite passes
+
+
+## Phase 4 — Goals & Decision Making 
+
+Phase 4 adds a deterministic AI decision layer for NPC behavior.
+
+### Added
+
+- Goal-based NPC behavior
+- Candidate action selection
+- Deterministic utility scoring
+- DecisionSystem for choosing actions
+- AgentSystem for central NPC decision execution
+- ActionExecutor for applying chosen actions
+- Decision-aware eating, shopping, working, sleeping, and socializing
+- Schedule influence on decisions
+- Relationship influence on social decisions
+- Memory influence on social decisions
+- Decision debugging with action scores
+- Multi-day social behavior persistence
+
+### Decision Flow
+
+```text
+NPC State
+   ↓
+GoalSystem
+   ↓
+Candidate Actions
+   ↓
+DecisionSystem
+   ↓
+Utility Scores
+   ↓
+Chosen Action
+   ↓
+ActionExecutor
+   ↓
+World State
+   ↓
+Next Tick
