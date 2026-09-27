@@ -9,7 +9,7 @@ using simple, testable systems.
 
 <br>
 
-![Python](https://img.shields.io/badge/Python-3.x-blue?style=flat-square)
+![Python](https://img.shields.io/badge/Python-3.14.7-blue?style=flat-square)
 ![Pytest](https://img.shields.io/badge/Tested%20with-Pytest-green?style=flat-square)
 ![Phase](https://img.shields.io/badge/Phase-1-orange?style=flat-square)
 
