@@ -1,6 +1,12 @@
 from WORLD.AI.action import ActionType
 
 
+class WorkStatus:
+    WORKED = "worked"
+    ABSENT = "absent"
+    TOO_TIRED = "too_tired"
+
+
 class WorkSystem:
     WORK_LOCATIONS = {
         "Village Farm",

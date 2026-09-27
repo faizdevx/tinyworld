@@ -1,6 +1,8 @@
 from WORLD.AI.action import ActionType
 from WORLD.Economy.trading import buy_food
+from WORLD.Events.event import WorldEvent
 from WORLD.Social.social import SocialSystem
+from WORLD.Work.work import WorkStatus
 
 
 class ActionExecutor:
@@ -21,46 +23,151 @@ class ActionExecutor:
     ) -> bool:
 
         if action == ActionType.EAT:
-            return npc.eat()
+            success = npc.eat()
+
+            if success:
+                world.event_log.add(
+                    WorldEvent(
+                        day=world.clock.day,
+                        hour=world.clock.hour,
+                        event_type="EAT",
+                        actor=npc.name,
+                        target=None,
+                        description=(
+                            f"{npc.name} ate food."
+                        ),
+                    )
+                )
+
+            return success
 
         if action == ActionType.SLEEP:
-            return self._sleep(npc)
+            success = self._sleep(npc, world)
+
+            if success:
+                world.event_log.add(
+                    WorldEvent(
+                        day=world.clock.day,
+                        hour=world.clock.hour,
+                        event_type="SLEEP",
+                        actor=npc.name,
+                        target=None,
+                        description=(
+                            f"{npc.name} rested at home."
+                        ),
+                    )
+                )
+
+            return success
 
         if action == ActionType.WORK:
-            return self._work(npc)
+            success = self._work(npc, world)
+
+            if success:
+                world.event_log.add(
+                    WorldEvent(
+                        day=world.clock.day,
+                        hour=world.clock.hour,
+                        event_type="WORK",
+                        actor=npc.name,
+                        target=npc.location,
+                        description=(
+                            f"{npc.name} worked at "
+                            f"{npc.location}."
+                        ),
+                    )
+                )
+
+            return success
 
         if action == ActionType.SHOP:
-            return self._shop(npc, world)
+            success = self._shop(npc, world)
+
+            if success:
+                world.event_log.add(
+                    WorldEvent(
+                        day=world.clock.day,
+                        hour=world.clock.hour,
+                        event_type="SHOP",
+                        actor=npc.name,
+                        target=world.shop.name,
+                        description=(
+                            f"{npc.name} bought food "
+                            f"from {world.shop.name}."
+                        ),
+                    )
+                )
+
+            return success
 
         if action == ActionType.SOCIALIZE:
-            return self._socialize(npc, world, target)
+            return self._socialize(
+                npc,
+                world,
+                target,
+            )
 
         return False
 
-    def _sleep(self, npc) -> bool:
+    def _sleep(self, npc, world=None) -> bool:
+        was_at_work = npc.location in self.WORK_LOCATIONS
+        was_low_energy = npc.energy <= 30
+
         if npc.location != npc.home:
             npc.move_to(npc.home)
 
         old_energy = npc.energy
-        npc.restore_energy(self.SLEEP_ENERGY_GAIN)
 
-        return npc.energy > old_energy
+        npc.restore_energy(
+            self.SLEEP_ENERGY_GAIN
+        )
 
-    def _work(self, npc) -> bool:
+        success = npc.energy > old_energy
+
+        if (
+            success
+            and was_at_work
+            and was_low_energy
+            and world is not None
+            and hasattr(world, "work_status")
+        ):
+            world.work_status[npc.name] = WorkStatus.TOO_TIRED
+
+        return success
+
+    def _work(self, npc, world=None) -> bool:
         if npc.location not in self.WORK_LOCATIONS:
             return False
 
         old_energy = npc.energy
-        npc.use_energy(self.WORK_ENERGY_COST)
 
-        return npc.energy < old_energy
+        npc.use_energy(
+            self.WORK_ENERGY_COST
+        )
+
+        success = npc.energy < old_energy
+
+        if success and world is not None:
+            if hasattr(world, "work_status"):
+                world.work_status[npc.name] = WorkStatus.WORKED
+
+        return success
 
     def _shop(self, npc, world) -> bool:
         npc.move_to(world.shop.name)
 
-        return buy_food(npc, world.shop)
+        return buy_food(
+            npc,
+            world.shop,
+        )
 
-    def _socialize(self, npc, world, target=None) -> bool:
+    def _socialize(
+        self,
+        npc,
+        world,
+        target=None,
+    ) -> bool:
+
         social_system = SocialSystem()
 
         if target is not None:
@@ -70,7 +177,12 @@ class ActionExecutor:
             if target.location != npc.location:
                 return False
 
-            social_system.interact(npc, target, world)
+            social_system.interact(
+                npc,
+                target,
+                world,
+            )
+
             return True
 
         for other in world.npcs:
@@ -80,7 +192,12 @@ class ActionExecutor:
             if other.location != npc.location:
                 continue
 
-            social_system.interact(npc, other, world)
+            social_system.interact(
+                npc,
+                other,
+                world,
+            )
+
             return True
 
         return False

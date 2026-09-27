@@ -1,7 +1,7 @@
 from WORLD.NPCs.npc import NPC
 from WORLD.Work.work import WorkSystem
 from WORLD.world import World
-
+from WORLD.Work.work import WorkStatus
 
 def create_npc(
     location="Village Farm",
@@ -73,3 +73,41 @@ def test_npc_at_home_does_not_work():
 
     assert rahul.energy == 80
     assert rahul.location == "House 1"
+
+def test_working_npc_is_marked_worked():
+    world = World()
+
+    rahul = create_npc(
+        location="Village Farm",
+        energy=80,
+        hunger=20,
+    )
+
+    world.add_npc(rahul)
+
+    world.work_status = {}
+
+    WorkSystem().update(world)
+
+    assert rahul.energy == 75
+    assert world.work_status[rahul.name] == WorkStatus.WORKED
+
+def test_tired_npc_is_marked_too_tired():
+    world = World()
+
+    rahul = create_npc(
+        location="Village Farm",
+        energy=20,
+        hunger=20,
+    )
+
+    world.add_npc(rahul)
+
+    world.work_status = {}
+
+    WorkSystem().update(world)
+
+    assert rahul.location == rahul.home
+    assert world.work_status[rahul.name] == WorkStatus.TOO_TIRED
+
+ 

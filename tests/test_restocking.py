@@ -1,11 +1,13 @@
 from WORLD.Resources.food import Resource
 from WORLD.Buildings.shop import Shop
 from WORLD.Restocking.restocking import RestockingSystem
+from WORLD.Events.event_log import EventLog
 
 
 class FakeClock:
-    def __init__(self, hour: int):
+    def __init__(self, hour: int, day: int = 1):
         self.hour = hour
+        self.day = day
 
 
 class FakeWorld:
@@ -14,8 +16,9 @@ class FakeWorld:
         hour: int,
         village_food: int = 100,
         shop_food: int = 20,
+        day: int = 1,
     ):
-        self.clock = FakeClock(hour)
+        self.clock = FakeClock(hour, day)
 
         self.food = Resource(
             name="Food",
@@ -29,6 +32,8 @@ class FakeWorld:
             food_price=5,
         )
 
+        self.event_log = EventLog()
+
 
 def test_shop_restocked_at_13():
     world = FakeWorld(13)
@@ -40,6 +45,16 @@ def test_shop_restocked_at_13():
     assert world.food.quantity == 95
     assert world.shop.food == 25
 
+    assert len(world.event_log.events) == 1
+
+    event = world.event_log.events[0]
+
+    assert event.event_type == "RESTOCK"
+    assert event.day == 1
+    assert event.hour == 13
+    assert event.actor == "Village"
+    assert event.target == "General Store"
+
 
 def test_restocking_does_not_happen_before_13():
     world = FakeWorld(12)
@@ -50,6 +65,7 @@ def test_restocking_does_not_happen_before_13():
 
     assert world.food.quantity == 100
     assert world.shop.food == 20
+    assert world.event_log.events == []
 
 
 def test_restocking_does_not_happen_after_13():
@@ -61,6 +77,7 @@ def test_restocking_does_not_happen_after_13():
 
     assert world.food.quantity == 100
     assert world.shop.food == 20
+    assert world.event_log.events == []
 
 
 def test_restocking_fails_when_village_has_insufficient_food():
@@ -76,6 +93,7 @@ def test_restocking_fails_when_village_has_insufficient_food():
 
     assert world.food.quantity == 3
     assert world.shop.food == 20
+    assert world.event_log.events == []
 
 
 def test_restocking_preserves_total_food():
@@ -98,3 +116,9 @@ def test_restocking_preserves_total_food():
     )
 
     assert before == after
+
+    assert len(world.event_log.events) == 1
+
+    event = world.event_log.events[0]
+
+    assert event.event_type == "RESTOCK"

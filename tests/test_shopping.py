@@ -3,7 +3,7 @@ from WORLD.AI.decision import DecisionSystem
 from WORLD.NPCs.npc import NPC
 from WORLD.Shopping.shopping import ShoppingSystem
 from WORLD.world import World
-
+from WORLD.AI.action import ActionType
 
 def create_npc(
     name="Rahul",
@@ -145,3 +145,29 @@ def test_shopping_can_be_followed_by_eating():
     from WORLD.AI.action import ActionType
 
     assert decision.chosen_action == ActionType.EAT
+
+
+def test_high_food_price_can_block_shopping():
+    world = World()
+
+    rahul = create_npc(
+        hunger=85,
+        money=6,
+        food=0,
+    )
+
+    world.add_npc(rahul)
+
+    world.shop.food = 2
+
+    world.pricing_system.update(world)
+
+    assert world.shop.food_price == 8
+
+    decision = world.decision_system.decide(
+        rahul,
+        world,
+    )
+
+    assert decision.scores.get(ActionType.SHOP, 0) == 0
+

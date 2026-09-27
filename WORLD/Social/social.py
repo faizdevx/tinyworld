@@ -1,4 +1,5 @@
 from WORLD.AI.action import ActionType
+from WORLD.Events.event import WorldEvent
 from WORLD.NPCs.memory import Memory
 
 
@@ -39,9 +40,22 @@ class SocialSystem:
                 interacted_pairs.add(pair)
                 break
 
-    def interact(self, npc_a, npc_b, world) -> None:
-        npc_a.change_relationship(npc_b, 1)
-        npc_b.change_relationship(npc_a, 1)
+    def interact(
+        self,
+        npc_a,
+        npc_b,
+        world,
+    ) -> None:
+
+        npc_a.change_relationship(
+            npc_b,
+            1,
+        )
+
+        npc_b.change_relationship(
+            npc_a,
+            1,
+        )
 
         npc_a.remember(
             Memory(
@@ -61,5 +75,16 @@ class SocialSystem:
             )
         )
 
-
-        
+        world.event_log.add(
+            WorldEvent(
+                day=world.clock.day,
+                hour=world.clock.hour,
+                event_type="SOCIALIZE",
+                actor=npc_a.name,
+                target=npc_b.name,
+                description=(
+                    f"{npc_a.name} spent time with "
+                    f"{npc_b.name}."
+                ),
+            )
+        )
