@@ -18,7 +18,7 @@ using simple, testable systems.
 <br><br>
 
 <!-- Replace this image with your simulation GIF -->
-<img src="hero_img.png" alt="TinyWorld simulation" width="800">
+<img src="hero_img.gif" alt="TinyWorld simulation" width="800">
 
 <br><br>
 
