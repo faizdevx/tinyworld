@@ -93,3 +93,35 @@ def test_full_tick_pipeline():
     # Clock moved from 12 -> 13.
     assert world.clock.hour == 13
 
+
+
+def test_simulation_restocking_moves_food_to_shop():
+    world = Village().create()
+
+    world.clock.hour = 13
+
+    simulation = Simulation(world)
+
+    simulation.tick()
+
+    assert world.food.quantity == 95
+    assert world.shop.food == 25
+
+
+def test_simulation_food_moves_from_farm_to_shop():
+    world = Village().create()
+
+    simulation = Simulation(world)
+
+    # Process 12:00.
+    world.clock.hour = 12
+
+    simulation.tick()
+
+    assert world.food.quantity == 104
+
+    # Process 13:00.
+    simulation.tick()
+
+    assert world.food.quantity == 99
+    assert world.shop.food == 25

@@ -13,16 +13,28 @@ from WORLD.Restocking.restocking import RestockingSystem
 class World:
 
     def __init__(self):
+        # -------------------------
+        # Time
+        # -------------------------
         self.clock = Clock()
-        self.shopping_system=ShoppingSystem()
+
+        # -------------------------
+        # Entities
+        # -------------------------
         self.npcs: list[NPC] = []
         self.buildings: list[Building] = []
-        self.restocking_system = RestockingSystem()
+
+        # -------------------------
+        # Resources
+        # -------------------------
         self.food = Resource(
             name="Food",
             quantity=100,
         )
 
+        # -------------------------
+        # Shop
+        # -------------------------
         self.shop = Shop(
             name="General Store",
             money=100,
@@ -30,8 +42,13 @@ class World:
             food_price=5,
         )
 
+        # -------------------------
+        # Systems
+        # -------------------------
         self.schedule_system = ScheduleSystem()
         self.farming_system = FarmingSystem()
+        self.restocking_system = RestockingSystem()
+        self.shopping_system = ShoppingSystem()
         self.needs_system = NeedsSystem()
 
     def add_npc(self, npc: NPC) -> None:

@@ -9,7 +9,7 @@ class Simulation:
     def tick(self) -> None:
         hour = self.world.clock.hour
 
-        # 1. Update NPC schedules.
+        # 1. Apply NPC schedules.
         for npc in self.world.npcs:
             self.world.schedule_system.update_npc(
                 npc,
@@ -21,22 +21,22 @@ class Simulation:
             self.world
         )
 
-        # 3. Restock the shop.
+        # 3. Move village food into shop inventory.
         self.world.restocking_system.update(
             self.world
         )
 
-        # 4. NPCs go shopping.
+        # 4. NPCs buy food.
         self.world.shopping_system.update(
             self.world
         )
 
-        # 5. NPCs consume food.
+        # 5. NPCs consume their own food.
         self.world.needs_system.update(
             self.world
         )
 
-        # 6. Advance the clock.
+        # 6. Advance simulation time.
         self.world.clock.tick()
 
     def run(self, ticks: int) -> None:

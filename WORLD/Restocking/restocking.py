@@ -7,10 +7,14 @@ class RestockingSystem:
         if world.clock.hour != self.RESTOCK_HOUR:
             return
 
-        # We need enough village food to restock the shop.
+        # There must be enough food in village storage.
         if world.food.quantity < self.RESTOCK_AMOUNT:
             return
 
         # Move food from village storage to the shop.
-        world.food.consume(self.RESTOCK_AMOUNT)
+        success = world.food.consume(self.RESTOCK_AMOUNT)
+
+        if not success:
+            return
+
         world.shop.food += self.RESTOCK_AMOUNT
