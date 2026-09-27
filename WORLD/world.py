@@ -11,7 +11,8 @@ from WORLD.Restocking.restocking import RestockingSystem
 from WORLD.Work.work import WorkSystem
 from WORLD.Rest.rest import RestSystem
 from WORLD.Social.social import SocialSystem
-
+from WORLD.AI.decision import DecisionSystem
+from WORLD.AI.action_executor import ActionExecutor
 
 class World:
 
@@ -56,7 +57,8 @@ class World:
         self.work_system=WorkSystem()
         self.rest_system=RestSystem()
         self.social_system = SocialSystem()
-        
+        self.decision_system = DecisionSystem()
+        self.action_executor = ActionExecutor()
     def add_npc(self, npc: NPC) -> None:
         self.npcs.append(npc)
 
