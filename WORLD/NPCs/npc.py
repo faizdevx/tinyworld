@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from WORLD.Map.position import Position
@@ -14,6 +14,7 @@ class NPC:
     food: int = 0
     energy: int = 100
     position: Optional[Position] = None
+    schedule: dict[int, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.money < 0:
@@ -25,11 +26,18 @@ class NPC:
         if not 0 <= self.energy <= 100:
             raise ValueError("Energy must be between 0 and 100.")
 
-    def move_to(self, location: str, position: Optional[Position] = None) -> None:
-        """Move the NPC instantly to a new location.
+        for hour, location in self.schedule.items():
+            if not 0 <= hour <= 23:
+                raise ValueError("Schedule hour must be between 0 and 23.")
 
-        Phase 1 deliberately uses teleportation instead of pathfinding.
-        """
+            if not location:
+                raise ValueError("Schedule location cannot be empty.")
+
+    def move_to(
+        self,
+        location: str,
+        position: Optional[Position] = None
+    ) -> None:
         if not location:
             raise ValueError("Location cannot be empty.")
 
@@ -64,8 +72,11 @@ class NPC:
 
         self.energy = max(0, self.energy - amount)
 
-    def eat(self, food_amount: int = 1, energy_gain: int = 20) -> bool:
-        """Consume food and restore energy."""
+    def eat(
+        self,
+        food_amount: int = 1,
+        energy_gain: int = 20
+    ) -> bool:
         if energy_gain < 0:
             raise ValueError("Energy gain cannot be negative.")
 

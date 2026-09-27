@@ -19,4 +19,4 @@ LLMs can eventually be added as a reasoning layer, not as the foundation of the 
 
 ## roadmap ?? 
 
-Clock ---> 
+Clock ---> other classes --> schedule npc-->final determinisitic world

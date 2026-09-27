@@ -1,0 +1,95 @@
+from WORLD.Village.village import Village
+from WORLD.Simulation.simulation import Simulation
+
+
+def test_simulation_tick_advances_clock():
+    world = Village().create()
+
+    simulation = Simulation(world)
+
+    starting_hour = world.clock.hour
+
+    simulation.tick()
+
+    assert world.clock.hour == (starting_hour + 1) % 24
+
+
+def test_simulation_updates_npc_schedule():
+    world = Village().create()
+
+    world.clock.hour = 8
+
+    simulation = Simulation(world)
+
+    simulation.tick()
+
+    rahul = next(
+        npc
+        for npc in world.npcs
+        if npc.name == "Rahul"
+    )
+
+    assert rahul.location == "Village Farm"
+
+
+def test_simulation_runs_farming():
+    world = Village().create()
+
+    world.clock.hour = 12
+
+    simulation = Simulation(world)
+
+    simulation.tick()
+
+    # Rahul + Arjun = 2 farmers
+    # 2 × 2 food = 4 food
+    assert world.food.quantity == 104
+
+
+def test_simulation_runs_needs():
+    world = Village().create()
+
+    world.clock.hour = 20
+
+    # Give every NPC one unit of food.
+    for npc in world.npcs:
+        npc.food = 1
+        npc.energy = 50
+
+    simulation = Simulation(world)
+
+    simulation.tick()
+
+    # Every NPC consumed their own food.
+    for npc in world.npcs:
+        assert npc.food == 0
+        assert npc.energy == 70
+
+    # Village food is not touched by NeedsSystem.
+    assert world.food.quantity == 100
+
+
+def test_full_tick_pipeline():
+    world = Village().create()
+
+    world.clock.hour = 12
+
+    simulation = Simulation(world)
+
+    rahul = next(
+        npc
+        for npc in world.npcs
+        if npc.name == "Rahul"
+    )
+
+    simulation.tick()
+
+    assert rahul.location == "Village Farm"
+
+    # Two farmers produce:
+    # 2 × 2 = 4
+    assert world.food.quantity == 104
+
+    # Clock moved from 12 -> 13.
+    assert world.clock.hour == 13
+
