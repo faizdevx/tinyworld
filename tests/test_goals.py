@@ -1,7 +1,7 @@
 from WORLD.AI.goal import GoalType
 from WORLD.AI.goal_system import GoalSystem
 from WORLD.NPCs.npc import NPC
-
+from WORLD.world import World
 
 def create_npc() -> NPC:
     return NPC(
@@ -49,3 +49,27 @@ def test_normal_state_has_no_urgent_goals():
     goals = GoalSystem().get_goals(npc)
 
     assert goals == []
+
+
+def test_nearby_npc_creates_social_goal():
+    world = World()
+
+    rahul = create_npc()
+
+    ali = NPC(
+        name="Ali",
+        role="shopkeeper",
+        money=50,
+        home="House 1",
+        location="House 1",
+    )
+
+    world.add_npc(rahul)
+    world.add_npc(ali)
+
+    goals = GoalSystem().get_goals(
+        rahul,
+        world,
+    )
+
+    assert GoalType.SOCIALIZE in goals

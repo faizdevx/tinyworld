@@ -1,8 +1,10 @@
 from WORLD.AI.action import ActionType
 from WORLD.AI.decision import DecisionSystem
+from WORLD.AI.goal_system import GoalSystem
 from WORLD.NPCs.npc import NPC
 from WORLD.world import World
-from WORLD.AI.action import ActionType
+from WORLD.AI.goal import GoalType
+
 
 def create_npc(
     name="Rahul",
@@ -120,3 +122,55 @@ def test_low_energy_at_work_prefers_sleep():
 
     assert decision.scores[ActionType.SLEEP] > decision.scores[ActionType.WORK]
     assert decision.chosen_action == ActionType.SLEEP
+
+
+def test_nearby_npc_creates_social_goal():
+    world = World()
+
+    rahul = create_npc(location="House 1")
+
+    ali = NPC(
+        name="Ali",
+        role="shopkeeper",
+        money=50,
+        home="House 1",
+        location="House 1",
+    )
+
+    world.add_npc(rahul)
+    world.add_npc(ali)
+
+    goals = GoalSystem().get_goals(
+        rahul,
+        world,
+    )
+
+    assert GoalType.SOCIALIZE in goals
+
+def test_better_relationship_increases_socialize_score():
+    world = World()
+
+    rahul = create_npc(
+        location="House 1",
+    )
+
+    ali = NPC(
+        name="Ali",
+        role="shopkeeper",
+        money=50,
+        home="House 1",
+        location="House 1",
+    )
+
+    world.add_npc(rahul)
+    world.add_npc(ali)
+
+    rahul.change_relationship(ali, 50)
+
+    decision = DecisionSystem().decide(
+        rahul,
+        world,
+    )
+
+    assert decision.scores[ActionType.SOCIALIZE] == 40
+

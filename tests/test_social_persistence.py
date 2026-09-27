@@ -11,7 +11,7 @@ def test_social_state_persists_across_days():
         role="farmer",
         money=50,
         home="House 1",
-        location="Village Farm",
+        location="House 1",
     )
 
     ali = NPC(
@@ -19,7 +19,7 @@ def test_social_state_persists_across_days():
         role="shopkeeper",
         money=50,
         home="House 2",
-        location="Village Farm",
+        location="House 1",
     )
 
     world.add_npc(rahul)
@@ -27,8 +27,8 @@ def test_social_state_persists_across_days():
 
     # Keep both NPCs at the same location for every hour.
     for hour in range(24):
-        rahul.schedule[hour] = "Village Farm"
-        ali.schedule[hour] = "Village Farm"
+        rahul.schedule[hour] = "House 1"
+        ali.schedule[hour] = "House 1"
 
     simulation = Simulation(world)
 

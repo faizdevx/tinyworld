@@ -1,15 +1,48 @@
 from itertools import combinations
 
+from WORLD.AI.action import ActionType
 from WORLD.NPCs.memory import Memory
 
 
 class SocialSystem:
     def update(self, world) -> None:
-        for npc_a, npc_b in combinations(world.npcs, 2):
-            if npc_a.location != npc_b.location:
+        interacted_pairs: set[tuple[str, str]] = set()
+
+        for npc in world.npcs:
+
+            decision = world.decision_system.decide(
+                npc,
+                world,
+            )
+
+            if decision.chosen_action != ActionType.SOCIALIZE:
                 continue
 
-            self.interact(npc_a, npc_b, world)
+            for other in world.npcs:
+                if other is npc:
+                    continue
+
+                if other.location != npc.location:
+                    continue
+
+                pair = tuple(
+                    sorted((npc.name, other.name))
+                )
+
+                if pair in interacted_pairs:
+                    continue
+
+                success = world.action_executor.execute(
+                    npc,
+                    ActionType.SOCIALIZE,
+                    world,
+                    target=other,
+                )
+
+                if success:
+                    interacted_pairs.add(pair)
+
+                break
 
     def interact(self, npc_a, npc_b, world) -> None:
         npc_a.change_relationship(npc_b, 1)

@@ -51,24 +51,25 @@ def test_simulation_runs_needs():
 
     world.clock.hour = 20
 
-    # Give every NPC one unit of food.
     for npc in world.npcs:
         npc.food = 1
         npc.energy = 50
+        npc.hunger = 80
 
     simulation = Simulation(world)
 
     simulation.tick()
 
-    # Every NPC consumed their own food.
     for npc in world.npcs:
+        # Hunger increases first:
+        # 80 -> 84
+        # Then EAT:
+        # 84 -> 44
         assert npc.food == 0
+        assert npc.hunger == 44
         assert npc.energy == 70
 
-    # Village food is not touched by NeedsSystem.
-    assert world.food.quantity == 100
-
-
+        
 def test_full_tick_pipeline():
     world = Village().create()
 

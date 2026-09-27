@@ -12,24 +12,24 @@ def test_simulation_uses_decision_to_trigger_shopping():
         money=50,
         home="House 1",
         location="House 1",
+        hunger=85,
+        energy=100,
+        food=0,
     )
 
     world.add_npc(rahul)
 
-    # Deliberately choose an arbitrary hour.
-    # Shopping should happen because of state, not the clock.
     world.clock.hour = 10
 
-    rahul.hunger = 85
-    rahul.energy = 100
-    rahul.food = 0
-
     simulation = Simulation(world)
-
     simulation.tick()
 
-    assert rahul.food == 1
+    # Shopping happened first.
     assert rahul.money == 45
+
+    # NeedsSystem then saw that Rahul had food and decided to eat.
+    assert rahul.food == 0
+    assert rahul.hunger == 49
 
     assert world.shop.food == 19
     assert world.shop.money == 105

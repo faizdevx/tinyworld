@@ -47,7 +47,7 @@ class DecisionSystem:
         return actions
 
     def decide(self, npc, world) -> Decision:
-        goals = self.goal_system.get_goals(npc)
+        goals = self.goal_system.get_goals(npc,world)
         actions = self.get_actions(npc, world)
 
         scores = {

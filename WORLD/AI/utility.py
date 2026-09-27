@@ -28,8 +28,6 @@ def score_action(
     elif action == ActionType.SLEEP:
         score = 100 - npc.energy
 
-        
-
     elif action == ActionType.WORK:
         if npc.location not in WORK_LOCATIONS:
             return 0
@@ -46,20 +44,22 @@ def score_action(
         score = npc.hunger
 
     elif action == ActionType.SOCIALIZE:
-        score = 10
-
-        # Only useful when another NPC is nearby.
-        has_other_npc = any(
-            other is not npc
-            and other.location == npc.location
+        nearby_npcs = [
+            other
             for other in world.npcs
-        )
+            if other is not npc
+            and other.location == npc.location
+        ]
 
-        if not has_other_npc:
+        if not nearby_npcs:
             return 0
 
-    else:
-        return 0
+        best_relationship = max(
+            npc.get_relationship(other)
+            for other in nearby_npcs
+        )
+
+        score = 10 + max(best_relationship, 0) // 5
 
     # ---------------------------------------------------------
     # Goal influence

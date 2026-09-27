@@ -6,12 +6,19 @@ from WORLD.Social.social import SocialSystem
 class ActionExecutor:
     WORK_ENERGY_COST = 5
     SLEEP_ENERGY_GAIN = 15
+
     WORK_LOCATIONS = {
         "Village Farm",
         "General Store",
     }
 
-    def execute(self, npc, action: ActionType, world) -> bool:
+    def execute(
+        self,
+        npc,
+        action: ActionType,
+        world,
+        target=None,
+    ) -> bool:
 
         if action == ActionType.EAT:
             return npc.eat()
@@ -26,14 +33,14 @@ class ActionExecutor:
             return self._shop(npc, world)
 
         if action == ActionType.SOCIALIZE:
-            return self._socialize(npc, world)
+            return self._socialize(npc, world, target)
 
         return False
 
     def _sleep(self, npc) -> bool:
         if npc.location != npc.home:
             npc.move_to(npc.home)
-            
+
         old_energy = npc.energy
         npc.restore_energy(self.SLEEP_ENERGY_GAIN)
 
@@ -53,8 +60,18 @@ class ActionExecutor:
 
         return buy_food(npc, world.shop)
 
-    def _socialize(self, npc, world) -> bool:
+    def _socialize(self, npc, world, target=None) -> bool:
         social_system = SocialSystem()
+
+        if target is not None:
+            if target is npc:
+                return False
+
+            if target.location != npc.location:
+                return False
+
+            social_system.interact(npc, target, world)
+            return True
 
         for other in world.npcs:
             if other is npc:
