@@ -9,11 +9,13 @@ class WorkSystem:
 
     def update(self, world) -> None:
         for npc in world.npcs:
-
             if npc.location not in self.WORK_LOCATIONS:
                 continue
 
-            decision = world.decision_system.decide(npc, world)
+            decision = world.decision_system.decide(
+                npc,
+                world,
+            )
 
             if decision.chosen_action == ActionType.WORK:
                 world.action_executor.execute(

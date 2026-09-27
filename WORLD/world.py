@@ -13,6 +13,7 @@ from WORLD.Rest.rest import RestSystem
 from WORLD.Social.social import SocialSystem
 from WORLD.AI.decision import DecisionSystem
 from WORLD.AI.action_executor import ActionExecutor
+from WORLD.AI.agent import AgentSystem
 
 class World:
 
@@ -59,6 +60,11 @@ class World:
         self.social_system = SocialSystem()
         self.decision_system = DecisionSystem()
         self.action_executor = ActionExecutor()
+
+        self.agent_system = AgentSystem(
+            self.decision_system
+            )
+
     def add_npc(self, npc: NPC) -> None:
         self.npcs.append(npc)
 

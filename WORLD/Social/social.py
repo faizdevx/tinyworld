@@ -1,5 +1,3 @@
-from itertools import combinations
-
 from WORLD.AI.action import ActionType
 from WORLD.NPCs.memory import Memory
 
@@ -9,7 +7,6 @@ class SocialSystem:
         interacted_pairs: set[tuple[str, str]] = set()
 
         for npc in world.npcs:
-
             decision = world.decision_system.decide(
                 npc,
                 world,
@@ -32,16 +29,14 @@ class SocialSystem:
                 if pair in interacted_pairs:
                     continue
 
-                success = world.action_executor.execute(
+                world.action_executor.execute(
                     npc,
                     ActionType.SOCIALIZE,
                     world,
                     target=other,
                 )
 
-                if success:
-                    interacted_pairs.add(pair)
-
+                interacted_pairs.add(pair)
                 break
 
     def interact(self, npc_a, npc_b, world) -> None:

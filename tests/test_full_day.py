@@ -26,8 +26,8 @@ def test_full_day_is_deterministic():
     assert world.clock.hour == 8
 
     assert world.food.quantity == 99
-    assert world.shop.food == 19
-    assert world.shop.money == 130
+    assert world.shop.food == 12
+    assert world.shop.money == 165
 
     rahul = next(npc for npc in world.npcs if npc.name == "Rahul")
     arjun = next(npc for npc in world.npcs if npc.name == "Arjun")
