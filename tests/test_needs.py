@@ -9,7 +9,11 @@ class FakeClock:
 
 
 class FakeWorld:
-    def __init__(self, hour: int, food_quantity: int = 100):
+    def __init__(
+        self,
+        hour: int,
+        food_quantity: int = 100,
+    ):
         self.clock = FakeClock(hour)
         self.npcs = []
         self.food = Resource(
@@ -18,7 +22,26 @@ class FakeWorld:
         )
 
 
-def test_population_consumes_food_at_20():
+def test_hunger_increases_over_time():
+    world = FakeWorld(10)
+
+    rahul = NPC(
+        name="Rahul",
+        role="farmer",
+        money=50,
+        home="House 1",
+        location="House 1",
+        hunger=20,
+    )
+
+    world.npcs.append(rahul)
+
+    NeedsSystem().update(world)
+
+    assert rahul.hunger == 24
+
+
+def test_npc_eats_at_20():
     world = FakeWorld(20)
 
     rahul = NPC(
@@ -28,59 +51,20 @@ def test_population_consumes_food_at_20():
         home="House 1",
         location="House 1",
         food=1,
-        energy=50,
-    )
-
-    ali = NPC(
-        name="Ali",
-        role="shopkeeper",
-        money=50,
-        home="House 2",
-        location="House 2",
-        food=1,
-        energy=60,
-    )
-
-    world.npcs.extend([rahul, ali])
-
-    needs = NeedsSystem()
-
-    needs.update(world)
-
-    assert rahul.food == 0
-    assert ali.food == 0
-
-    assert rahul.energy == 70
-    assert ali.energy == 80
-
-    assert world.food.quantity == 100
-
-
-def test_population_does_not_consume_before_20():
-    world = FakeWorld(19)
-
-    rahul = NPC(
-        name="Rahul",
-        role="farmer",
-        money=50,
-        home="House 1",
-        location="House 1",
-        food=1,
+        hunger=60,
         energy=50,
     )
 
     world.npcs.append(rahul)
 
-    needs = NeedsSystem()
+    NeedsSystem().update(world)
 
-    needs.update(world)
-
-    assert world.food.quantity == 100
-    assert rahul.food == 1
-    assert rahul.energy == 50
+    assert rahul.food == 0
+    assert rahul.hunger == 24
+    assert rahul.energy == 70
 
 
-def test_npc_without_food_does_not_gain_energy():
+def test_npc_without_food_becomes_less_energetic():
     world = FakeWorld(20)
 
     rahul = NPC(
@@ -90,20 +74,21 @@ def test_npc_without_food_does_not_gain_energy():
         home="House 1",
         location="House 1",
         food=0,
+        hunger=69,
         energy=50,
     )
 
     world.npcs.append(rahul)
 
-    needs = NeedsSystem()
+    NeedsSystem().update(world)
 
-    needs.update(world)
+    # Hunger: 69 + 4 = 73
+    # Then severe hunger penalty: -5 energy.
+    assert rahul.hunger == 73
+    assert rahul.energy == 45
 
-    assert rahul.food == 0
-    assert rahul.energy == 50
 
-
-def test_energy_cannot_exceed_100():
+def test_food_is_not_taken_from_global_food_pool():
     world = FakeWorld(20)
 
     rahul = NPC(
@@ -113,15 +98,12 @@ def test_energy_cannot_exceed_100():
         home="House 1",
         location="House 1",
         food=1,
-        energy=90,
+        hunger=50,
+        energy=50,
     )
 
     world.npcs.append(rahul)
 
-    needs = NeedsSystem()
-
-    needs.update(world)
+    NeedsSystem().update(world)
 
     assert world.food.quantity == 100
-    assert rahul.food == 0
-    assert rahul.energy == 100

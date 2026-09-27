@@ -123,3 +123,22 @@ def test_production_depends_on_number_of_farmers():
     farming.update(world)
 
     assert world.food.quantity == 104
+
+
+def test_low_energy_farmer_produces_less_food():
+    world = FakeWorld(12)
+
+    rahul = NPC(
+        name="Rahul",
+        role="farmer",
+        money=50,
+        home="House 1",
+        location="Village Farm",
+        energy=20,
+    )
+
+    world.npcs.append(rahul)
+
+    FarmingSystem().update(world)
+
+    assert world.food.quantity == 101

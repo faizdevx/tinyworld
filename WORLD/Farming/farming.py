@@ -14,7 +14,13 @@ class FarmingSystem:
             and npc.location == self.FARM_LOCATION
         ]
 
-        production = len(farmers) * self.FOOD_PER_FARMER
+        production = sum(
+            int(
+                self.FOOD_PER_FARMER
+                * npc.productivity
+            )
+            for npc in farmers
+        )
 
         if production == 0:
             return

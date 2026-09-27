@@ -8,6 +8,9 @@ from WORLD.Farming.farming import FarmingSystem
 from WORLD.Needs.needs import NeedsSystem
 from WORLD.Shopping.shopping import ShoppingSystem
 from WORLD.Restocking.restocking import RestockingSystem
+from WORLD.Work.work import WorkSystem
+from WORLD.Rest.rest import RestSystem
+
 
 
 class World:
@@ -50,6 +53,8 @@ class World:
         self.restocking_system = RestockingSystem()
         self.shopping_system = ShoppingSystem()
         self.needs_system = NeedsSystem()
+        self.work_system=WorkSystem()
+        self.rest_system=RestSystem()
 
     def add_npc(self, npc: NPC) -> None:
         self.npcs.append(npc)

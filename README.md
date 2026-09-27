@@ -543,3 +543,45 @@ than a single large simulation class.
 * [x] Shopping
 * [x] Needs / food consumption
 * [x] Simulation pipeline
+
+
+## Phase 2 — Needs, Energy & Economy ✅
+
+Phase 2 introduced consequences and connected the village systems into a basic resource loop.
+
+### Added
+- NPC energy and hunger
+- Food ownership and consumption
+- Work and energy costs
+- Rest and energy recovery
+- Farmer productivity based on energy
+- Farming and food production
+- Shop restocking
+- NPC food purchases
+- Money transfers and trading
+- Deterministic full-day simulation
+
+### Food Flow
+```text
+Farm → Village Food → Shop → NPC → Eat
+```
+
+### Simulation Loop
+Schedule
+→ Work
+→ Farming
+→ Restocking
+→ Shopping
+→ Needs
+→ Rest
+→ Clock
+### Core Feedback Loop
+Food shortage
+→ Hunger increases
+→ Energy decreases
+→ Productivity falls
+→ Food production decreases
+### Testing
+Added unit tests for Phase 2 systems
+Added a deterministic 24-hour integration test
+Full test suite: 76 tests passed
