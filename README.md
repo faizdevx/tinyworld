@@ -11,6 +11,8 @@ using simple, testable systems.
 
 ![Python](https://img.shields.io/badge/Python-3.14.7-blue?style=flat-square)
 ![Pytest](https://img.shields.io/badge/Tested%20with-Pytest-green?style=flat-square)
+![Dataclasses](https://img.shields.io/badge/Stdlib-Dataclasses-blueviolet?style=flat-square)
+![Typing](https://img.shields.io/badge/Stdlib-Typing-blueviolet?style=flat-square)
 ![Phase](https://img.shields.io/badge/Phase-1-orange?style=flat-square)
 
 <br><br>
