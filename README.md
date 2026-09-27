@@ -585,3 +585,32 @@ Food shortage
 Added unit tests for Phase 2 systems
 Added a deterministic 24-hour integration test
 Full test suite: 76 tests passed
+
+## Phase 3 — NPC Relationships & Memory ✅
+
+Phase 3 introduced persistent social state to NPCs.
+
+### Added
+- NPC relationships with bounded values from -100 to +100
+- NPC memories with day, hour, event, and importance
+- Bounded memory storage
+- SocialSystem for basic NPC interactions
+- Interactions increase relationships
+- Interactions create memories
+- Social state persists across multiple days
+
+### Social Flow
+```text
+NPCs share location
+→ interaction
+→ relationship changes
+→ memory created
+→ state persists
+```
+
+### Testing
+Added relationship unit tests
+Added memory unit tests
+Added social interaction tests
+Added multi-day social persistence integration test
+Full test suite passes

@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import ClassVar, Optional
 
 from WORLD.Map.position import Position
+from WORLD.NPCs.memory import Memory
+from WORLD.NPCs.relationship import Relationship
 
 
 @dataclass
@@ -16,6 +18,10 @@ class NPC:
     hunger: int = 0
     position: Optional[Position] = None
     schedule: dict[int, str] = field(default_factory=dict)
+    relationships: dict[str, Relationship] = field(default_factory=dict)
+    memories: list[Memory] = field(default_factory=list)
+
+    MAX_MEMORIES: ClassVar[int] = 50
 
     def __post_init__(self) -> None:
         if self.money < 0:
@@ -142,3 +148,49 @@ class NPC:
             return 0.5
 
         return 1.0
+
+    # -------------------------
+    # Relationships
+    # -------------------------
+
+    def get_relationship(self, other: "NPC") -> int:
+        relationship = self.relationships.get(other.name)
+
+        if relationship is None:
+            return 0
+
+        return relationship.value
+
+    def change_relationship(
+        self,
+        other: "NPC",
+        amount: int,
+    ) -> None:
+        if other.name == self.name:
+            raise ValueError(
+                "An NPC cannot have a relationship with itself."
+            )
+
+        relationship = self.relationships.get(other.name)
+
+        if relationship is None:
+            relationship = Relationship(
+                npc_a=self,
+                npc_b=other,
+            )
+            self.relationships[other.name] = relationship
+
+        if amount >= 0:
+            relationship.improve(amount)
+        else:
+            relationship.worsen(-amount)
+
+    # -------------------------
+    # Memories
+    # -------------------------
+
+    def remember(self, memory: Memory) -> None:
+        self.memories.append(memory)
+
+        if len(self.memories) > self.MAX_MEMORIES:
+            self.memories.pop(0)
