@@ -250,3 +250,33 @@ def test_cooperation_creates_world_event():
     assert event.event_type == "FOOD_GIFT"
     assert event.actor == "Rahul"
     assert event.target == "Sara"
+
+def test_cooperation_increases_donor_reputation():
+    world = World()
+
+    receiver = create_npc(
+        name="Sara",
+        money=0,
+        food=0,
+        hunger=80,
+    )
+
+    donor = create_npc(
+        name="Rahul",
+        money=50,
+        food=2,
+        hunger=20,
+    )
+
+    world.add_npc(receiver)
+    world.add_npc(donor)
+
+    receiver.change_relationship(
+        donor,
+        30,
+    )
+
+    CooperationSystem().update(world)
+
+    assert donor.reputation == 5
+    assert receiver.reputation == 0

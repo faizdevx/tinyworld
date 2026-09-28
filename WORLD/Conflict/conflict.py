@@ -4,13 +4,14 @@ from WORLD.NPCs.memory import Memory
 
 class ConflictSystem:
     """
-    Handles simple conflicts caused by food scarcity.
+    Handles conflicts caused by severe food scarcity.
 
     A conflict occurs when:
     - shop food is critically low
-    - two NPCs are in the same location
     - both NPCs are hungry
-    - neither NPC can currently afford food
+    - both NPCs have no food
+    - both NPCs cannot afford the current food price
+    - both NPCs are in the same location
     """
 
     FOOD_SCARCITY_THRESHOLD = 2
@@ -38,7 +39,9 @@ class ConflictSystem:
                     continue
 
                 pair = tuple(
-                    sorted((npc_a.name, npc_b.name))
+                    sorted(
+                        (npc_a.name, npc_b.name)
+                    )
                 )
 
                 if pair in conflicted_pairs:
@@ -54,8 +57,7 @@ class ConflictSystem:
 
     def _needs_food(self, npc, world) -> bool:
         """
-        Return True when an NPC is currently struggling
-        to obtain food.
+        Return True when an NPC is struggling to obtain food.
         """
 
         if npc.hunger < self.HUNGER_THRESHOLD:
@@ -76,9 +78,16 @@ class ConflictSystem:
         world,
     ) -> None:
         """
-        Apply the consequences of a food-related conflict.
+        Apply the consequences of a conflict.
+
+        Conflict:
+        - lowers both relationships
+        - creates negative memories
+        - lowers both reputations
+        - creates a world event
         """
 
+        # Relationships.
         npc_a.change_relationship(
             npc_b,
             self.RELATIONSHIP_CHANGE,
@@ -89,6 +98,7 @@ class ConflictSystem:
             self.RELATIONSHIP_CHANGE,
         )
 
+        # Memories.
         npc_a.remember(
             Memory(
                 day=world.clock.day,
@@ -107,6 +117,16 @@ class ConflictSystem:
             )
         )
 
+        # Reputation.
+        world.reputation_system.apply_conflict(
+            npc_a
+        )
+
+        world.reputation_system.apply_conflict(
+            npc_b
+        )
+
+        # World event.
         world.event_log.add(
             WorldEvent(
                 day=world.clock.day,

@@ -9,6 +9,7 @@ def create_npc(
     money=0,
     food=0,
     hunger=80,
+    reputation=0,
 ):
     return NPC(
         name=name,
@@ -18,6 +19,7 @@ def create_npc(
         location=location,
         food=food,
         hunger=hunger,
+        reputation=reputation,
     )
 
 
@@ -222,3 +224,44 @@ def test_same_pair_only_conflicts_once_per_update():
     assert len(world.event_log.events) == 1
     assert rahul.get_relationship(ali) == -5
     assert ali.get_relationship(rahul) == -5
+
+def test_conflict_decreases_reputation_of_both_npcs():
+    world = World()
+
+    world.shop.food = 2
+    world.shop.food_price = 8
+
+    rahul = create_npc("Rahul")
+    ali = create_npc("Ali")
+
+    world.add_npc(rahul)
+    world.add_npc(ali)
+
+    ConflictSystem().update(world)
+
+    assert rahul.reputation == -5
+    assert ali.reputation == -5
+
+def test_conflict_reputation_cannot_drop_below_minimum():
+    world = World()
+
+    world.shop.food = 2
+    world.shop.food_price = 8
+
+    rahul = create_npc(
+        "Rahul",
+        reputation=-99,
+    )
+
+    ali = create_npc(
+        "Ali",
+        reputation=-99,
+    )
+
+    world.add_npc(rahul)
+    world.add_npc(ali)
+
+    ConflictSystem().update(world)
+
+    assert rahul.reputation == -100
+    assert ali.reputation == -100

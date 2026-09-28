@@ -20,7 +20,7 @@ class NPC:
     schedule: dict[int, str] = field(default_factory=dict)
     relationships: dict[str, Relationship] = field(default_factory=dict)
     memories: list[Memory] = field(default_factory=list)
-
+    reputation:int=0
     MAX_MEMORIES: ClassVar[int] = 50
 
     def __post_init__(self) -> None:
@@ -36,6 +36,11 @@ class NPC:
         if not 0 <= self.hunger <= 100:
             raise ValueError("Hunger must be between 0 and 100.")
 
+        if not -100<=self.reputation<=100:
+            raise ValueError(
+                "Reputation must be between -100 and 100"
+            )
+            
         for hour, location in self.schedule.items():
             if not 0 <= hour <= 23:
                 raise ValueError(

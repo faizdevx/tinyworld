@@ -4,16 +4,10 @@ from WORLD.NPCs.memory import Memory
 
 class CooperationSystem:
     """
-    Handles simple food-sharing between NPCs.
+    Handles food sharing between nearby NPCs.
 
-    A hungry NPC can receive one food unit from a nearby
-    NPC when:
-
-    - the receiver has no food
-    - the receiver is hungry
-    - the receiver cannot afford the current shop price
-    - the donor has food
-    - the receiver has a strong enough relationship with donor
+    A hungry NPC can receive one food unit from another NPC
+    when the donor and receiver satisfy the cooperation rules.
     """
 
     HUNGER_THRESHOLD = 70
@@ -90,8 +84,12 @@ class CooperationSystem:
         """
         Transfer food from donor to receiver.
 
-        The transfer also strengthens the relationship
-        and creates memories for both NPCs.
+        Successful cooperation:
+        - transfers food
+        - improves relationship
+        - creates memories
+        - increases donor reputation
+        - creates a world event
         """
 
         success = donor.consume_food(
@@ -105,6 +103,7 @@ class CooperationSystem:
             self.FOOD_TRANSFER_AMOUNT
         )
 
+        # Relationship changes.
         donor.change_relationship(
             receiver,
             1,
@@ -115,6 +114,7 @@ class CooperationSystem:
             1,
         )
 
+        # Memories.
         donor.remember(
             Memory(
                 day=world.clock.day,
@@ -137,6 +137,12 @@ class CooperationSystem:
             )
         )
 
+        # Reputation.
+        world.reputation_system.apply_cooperation(
+            donor
+        )
+
+        # World event.
         world.event_log.add(
             WorldEvent(
                 day=world.clock.day,

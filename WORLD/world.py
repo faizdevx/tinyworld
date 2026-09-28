@@ -18,6 +18,7 @@ from WORLD.Events.event_log import EventLog
 from WORLD.Economy.pricing import PricingSystem
 from WORLD.Cooperation.cooperation import CooperationSystem
 from WORLD.Conflict.conflict import ConflictSystem
+from WORLD.Social.reputation import ReputationSystem
 
 class World:
 
@@ -71,6 +72,7 @@ class World:
         self.event_log = EventLog()
         self.conflict_system = ConflictSystem()
         self.cooperation_system = CooperationSystem()
+        self.reputation_system = ReputationSystem()
     def add_npc(self, npc: NPC) -> None:
         self.npcs.append(npc)
 
