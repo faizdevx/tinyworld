@@ -4,7 +4,7 @@ from WORLD.AI.perception import Perception
 from WORLD.AI.planner import Planner
 from WORLD.AI.replanner import Replanner
 
-
+from WORLD.AI.plan_executor import PlanExecutor
 class AgentSystem:
     """
     Coordinates the Phase 6 cognition pipeline.
@@ -22,6 +22,7 @@ class AgentSystem:
         planner=None,
         replanner=None,
         memory_retriever=None,
+        plan_executor=None,
     ):
         self.decision_system = decision_system
 
@@ -58,6 +59,8 @@ class AgentSystem:
             else MemoryRetriever()
         )
 
+        self.plan_executor = plan_executor
+
     def _update_beliefs(self, npc, world):
         """
         Phase 6.14 currently uses perfect perception.
@@ -75,25 +78,39 @@ class AgentSystem:
 
     def _update_goals(self, npc, world):
         """
-        Evaluate current needs and keep the highest-priority
-        immediate goal available to the agent.
+        Evaluate immediate needs together with persistent
+        long-term goals, then select the highest-priority
+        active goal.
+
+        Urgent needs and long-term objectives compete through
+        the same priority-selection mechanism.
         """
-        goals = self.goal_system.evaluate_goals(
+        immediate_goals = self.goal_system.evaluate_goals(
             npc,
             world,
         )
 
+        long_term_goals = [
+            goal
+            for goal in self.goal_system.get_long_term_goals(npc)
+            if not self.goal_system.is_goal_complete(goal)
+        ]
+
+        all_goals = immediate_goals + long_term_goals
+
         current_day = world.clock.day
 
         selected_goal = self.goal_system.select_highest_priority(
-            goals,
+            all_goals,
             current_day,
         )
 
         if selected_goal is not None:
             npc.current_goal = selected_goal
+        else:
+            npc.current_goal = None
 
-        return goals
+        return all_goals
 
     def _update_plan(self, npc, world):
         """
@@ -134,6 +151,46 @@ class AgentSystem:
 
         return npc.active_plan
 
+    def _execute_plan_or_decide(self, npc, world):
+        """
+        Execute the active plan when its current step is executable.
+
+        Fall back to DecisionSystem for unsupported or conceptual
+        plan steps. This keeps older behavior working while the
+        planner is gradually converted to concrete actions.
+        """
+        active_plan = getattr(
+            npc,
+            "active_plan",
+            None,
+        )
+
+        if active_plan is not None:
+            if self.plan_executor is None:
+                self.plan_executor = PlanExecutor(
+                    world.action_executor
+                )
+
+            current_action = active_plan.current_action()
+
+            if current_action in self.plan_executor.ACTION_MAP:
+                return self.plan_executor.execute_current_step(
+                    npc,
+                    active_plan,
+                    world,
+                )
+
+        decision = self.decision_system.decide(
+            npc,
+            world,
+        )
+
+        return world.action_executor.execute(
+            npc,
+            decision.chosen_action,
+            world,
+        )
+
     def update(self, world):
         """
         Run one cognition cycle for every NPC.
@@ -168,13 +225,7 @@ class AgentSystem:
                 world,
             )
 
-            decision = self.decision_system.decide(
+            self._execute_plan_or_decide(
                 npc,
-                world,
-            )
-
-            world.action_executor.execute(
-                npc,
-                decision.chosen_action,
                 world,
             )
