@@ -655,3 +655,34 @@ ActionExecutor
 World State
    ↓
 Next Tick
+
+```
+
+## Phase 5 (turns TinyWorld into a feedback-driven simulation)
+
+## What was added
+
+- World events and event logging
+- Work attendance and productivity effects
+- Dynamic food pricing
+- Price-aware NPC decisions
+- Cooperation and conflict
+- Reputation and relationship changes
+- Cascading consequences
+- Seeded randomness
+- Environmental events, starting with drought
+- 72-hour multi-day emergence tests
+- Same-seed reproducibility and different-seed variation
+
+## Core Loop
+
+```text
+Decisions
+   ↓
+Actions
+   ↓
+World Changes
+   ↓
+New Conditions
+   ↓
+New Decisions

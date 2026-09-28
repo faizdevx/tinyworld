@@ -6,7 +6,16 @@ class FarmingSystem:
     FOOD_PER_FARMER = 2
     HARVEST_HOUR = 12
     FARM_LOCATION = "Village Farm"
+    PRODUCTIVITY_VARIATION = (-1, 0, 1)
 
+    def _random_variation(self, world) -> int:
+          if not hasattr(world, "rng"):
+              return 0
+
+          return world.rng.choice(
+             self.PRODUCTIVITY_VARIATION
+           )
+           
     def update(self, world) -> None:
         if world.clock.hour != self.HARVEST_HOUR:
             return
@@ -43,11 +52,21 @@ class FarmingSystem:
             # Productivity
             # -------------------------------------------------
 
-            production += int(
+            base_production=int(
                 self.FOOD_PER_FARMER
                 * npc.productivity
             )
 
+            if hasattr(world,"environment_system"):
+                base_production=int(
+                    base_production
+                    *world.environment_system.production_multiplier()
+                )
+
+            production+=max(
+                0,
+                base_production+self._random_variation(world),
+            )
         # No production means no harvest event.
         if production == 0:
             return

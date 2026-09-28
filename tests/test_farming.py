@@ -220,3 +220,82 @@ def test_worked_farmer_produces_food():
     FarmingSystem().update(world)
 
     assert world.food.quantity == 102
+
+
+def test_seeded_productivity_stays_within_bounds():
+    from WORLD.world import World
+
+    world = World(seed=42)
+    world.clock.hour = 12
+
+    farmer = NPC(
+        name="Rahul",
+        role="farmer",
+        money=50,
+        home="House 1",
+        location="Village Farm",
+    )
+
+    world.add_npc(farmer)
+
+    before = world.food.quantity
+
+    FarmingSystem().update(world)
+
+    produced = world.food.quantity - before
+
+    assert produced in {1, 2, 3}
+
+
+def test_same_seed_produces_same_harvest():
+    from WORLD.world import World
+
+    def run(seed):
+        world = World(seed=seed)
+        world.clock.hour = 12
+
+        farmer = NPC(
+            name="Rahul",
+            role="farmer",
+            money=50,
+            home="House 1",
+            location="Village Farm",
+        )
+
+        world.add_npc(farmer)
+
+        before = world.food.quantity
+
+        FarmingSystem().update(world)
+
+        return world.food.quantity - before
+
+    assert run(42) == run(42)
+
+
+def test_different_seed_can_produce_different_harvest():
+    from WORLD.world import World
+
+    results = set()
+
+    for seed in range(1, 20):
+        world = World(seed=seed)
+        world.clock.hour = 12
+
+        farmer = NPC(
+            name="Rahul",
+            role="farmer",
+            money=50,
+            home="House 1",
+            location="Village Farm",
+        )
+
+        world.add_npc(farmer)
+
+        before = world.food.quantity
+
+        FarmingSystem().update(world)
+
+        results.add(world.food.quantity - before)
+
+    assert len(results) > 1

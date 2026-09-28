@@ -22,6 +22,9 @@ class Simulation:
             for npc in self.world.npcs
         }
 
+        if hasattr(self.world,"environment_system"):
+            self.world.environment_system.update(self.world)
+            
         # -----------------------------------------------------
         # 1. Follow the normal schedule.
         # -----------------------------------------------------

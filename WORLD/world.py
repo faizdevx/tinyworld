@@ -19,10 +19,13 @@ from WORLD.Economy.pricing import PricingSystem
 from WORLD.Cooperation.cooperation import CooperationSystem
 from WORLD.Conflict.conflict import ConflictSystem
 from WORLD.Social.reputation import ReputationSystem
+from WORLD.Simulation.rng import SimulationRNG
+from WORLD.Environment.environment import EnvironmentSystem
+
 
 class World:
 
-    def __init__(self):
+    def __init__(self,seed:int=42):
         # -------------------------
         # Time
         # -------------------------
@@ -73,6 +76,13 @@ class World:
         self.conflict_system = ConflictSystem()
         self.cooperation_system = CooperationSystem()
         self.reputation_system = ReputationSystem()
+        self.rng = SimulationRNG(seed)
+
+        self.environment_system = EnvironmentSystem(
+            random_events_enabled=False
+        )
+
+
     def add_npc(self, npc: NPC) -> None:
         self.npcs.append(npc)
 
