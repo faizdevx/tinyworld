@@ -174,3 +174,65 @@ def test_multi_step_plan_persists_across_agent_updates():
     assert npc.active_plan.current_step == 2
     assert npc.food == 0
     assert npc.active_plan.is_complete()
+    
+def test_plan_is_interrupted_and_replanned_when_hunger_becomes_critical():
+    world = World(seed=42)
+
+    npc = NPC(
+        name="Rahul",
+        role="worker",
+        money=50,
+        home="Home",
+        location="Farm",
+        food=1,
+        hunger=20,
+        energy=100,
+    )
+
+    world.add_npc(npc)
+
+    work_goal = world.agent_system.goal_system.create_long_term_goal(
+        npc=npc,
+        goal_type=GoalType.EARN_MONEY,
+        priority=60,
+        current_day=world.clock.day,
+    )
+
+    npc.current_goal = work_goal
+
+    npc.active_plan = world.agent_system.planner.create_plan(
+        npc,
+        work_goal,
+        world,
+    )
+
+    assert npc.active_plan.goal_type == GoalType.EARN_MONEY
+    assert not npc.active_plan.is_interrupted()
+
+    # Unexpected condition.
+    npc.hunger = 95
+
+    # Interruption is handled by PlanExecutor.
+    result = world.agent_system._execute_plan_or_decide(
+        npc,
+        world,
+    )
+
+    assert result is False
+    assert npc.active_plan.is_interrupted()
+
+    # Replanning happens as a separate cognition phase.
+    world.agent_system._update_goals(
+        npc,
+        world,
+    )
+
+    world.agent_system._update_plan(
+        npc,
+        world,
+    )
+
+    assert npc.current_goal.goal_type == GoalType.SATISFY_HUNGER
+    assert npc.active_plan.goal_type == GoalType.SATISFY_HUNGER
+    assert not npc.active_plan.is_interrupted()
+    assert npc.active_plan.current_step == 0

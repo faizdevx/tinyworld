@@ -153,11 +153,11 @@ class AgentSystem:
 
     def _execute_plan_or_decide(self, npc, world):
         """
-        Execute the active plan when its current step is executable.
+        Execute the active plan when one exists.
 
-        Fall back to DecisionSystem for unsupported or conceptual
-        plan steps. This keeps older behavior working while the
-        planner is gradually converted to concrete actions.
+        PlanExecutor owns plan interruption and execution.
+        DecisionSystem is only used when there is no active plan
+        or the plan has been completed.
         """
         active_plan = getattr(
             npc,
@@ -171,14 +171,11 @@ class AgentSystem:
                     world.action_executor
                 )
 
-            current_action = active_plan.current_action()
-
-            if current_action in self.plan_executor.ACTION_MAP:
-                return self.plan_executor.execute_current_step(
-                    npc,
-                    active_plan,
-                    world,
-                )
+            return self.plan_executor.execute_current_step(
+                npc,
+                active_plan,
+                world,
+            )
 
         decision = self.decision_system.decide(
             npc,
@@ -195,6 +192,10 @@ class AgentSystem:
         """
         Run one cognition cycle for every NPC.
 
+        Existing active plans are executed through PlanExecutor.
+        NPCs without an existing active plan retain the legacy
+        DecisionSystem behavior.
+
         Pipeline:
 
         Perception
@@ -205,11 +206,22 @@ class AgentSystem:
             ↓
         Plan / Replan
             ↓
-        Decision
+        PlanExecutor OR DecisionSystem
             ↓
         Action
         """
         for npc in world.npcs:
+            active_plan_before_update = getattr(
+                npc,
+                "active_plan",
+                None,
+            )
+
+            had_active_plan = (
+                active_plan_before_update is not None
+                and not active_plan_before_update.is_complete()
+            )
+
             self._update_beliefs(
                 npc,
                 world,
@@ -225,7 +237,19 @@ class AgentSystem:
                 world,
             )
 
-            self._execute_plan_or_decide(
-                npc,
-                world,
-            )
+            if had_active_plan:
+                self._execute_plan_or_decide(
+                    npc,
+                    world,
+                )
+            else:
+                decision = self.decision_system.decide(
+                    npc,
+                    world,
+                )
+
+                world.action_executor.execute(
+                    npc,
+                    decision.chosen_action,
+                    world,
+                )
