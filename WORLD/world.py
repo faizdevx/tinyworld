@@ -13,7 +13,7 @@ from WORLD.Rest.rest import RestSystem
 from WORLD.Social.social import SocialSystem
 from WORLD.AI.decision import DecisionSystem
 from WORLD.AI.action_executor import ActionExecutor
-from WORLD.AI.agent import AgentSystem
+from WORLD.system.agent import AgentSystem
 from WORLD.Events.event_log import EventLog
 from WORLD.Economy.pricing import PricingSystem
 from WORLD.Cooperation.cooperation import CooperationSystem

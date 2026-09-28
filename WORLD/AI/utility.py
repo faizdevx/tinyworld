@@ -1,6 +1,37 @@
 from WORLD.AI.action import ActionType
 from WORLD.AI.goal import GoalType
+from dataclasses import dataclass
 
+@dataclass
+
+class UtilityContext:
+    social_need: float = 0.0
+    money_need: float = 0.0
+    relationship_strength: float = 0.0
+
+class UtilitySystem:
+    """
+    Converts world/context needs into utility scores while
+    incorporating NPC personality.
+    """
+
+    def score_socialize(self, npc, context: UtilityContext) -> float:
+        return (
+            context.social_need
+            * npc.personality.sociability
+        )
+
+    def score_work(self, npc, context: UtilityContext) -> float:
+        return (
+            context.money_need
+            * npc.personality.ambition
+        )
+
+    def score_helping(self, npc, context: UtilityContext) -> float:
+        return (
+            context.relationship_strength
+            * npc.personality.generosity
+        )
 
 WORK_LOCATIONS = {
     "Village Farm",
