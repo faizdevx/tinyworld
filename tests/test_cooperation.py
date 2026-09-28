@@ -5,10 +5,11 @@ from WORLD.world import World
 
 def create_npc(
     name,
+    location="House 1",
     money=0,
     food=0,
     hunger=80,
-    location="House 1",
+    reputation=0,
 ):
     return NPC(
         name=name,
@@ -18,8 +19,8 @@ def create_npc(
         location=location,
         food=food,
         hunger=hunger,
+        reputation=reputation,
     )
-
 
 def test_friend_can_give_food_to_hungry_npc():
     world = World()
@@ -280,3 +281,45 @@ def test_cooperation_increases_donor_reputation():
 
     assert donor.reputation == 5
     assert receiver.reputation == 0
+
+
+def test_high_reputation_lowers_required_relationship():
+    system = CooperationSystem()
+
+    receiver = create_npc(
+        "Rahul",
+        reputation=50,
+    )
+
+    assert (
+        system._required_relationship(receiver)
+        == 20
+    )
+
+
+def test_normal_reputation_uses_base_relationship_threshold():
+    system = CooperationSystem()
+
+    receiver = create_npc(
+        "Rahul",
+        reputation=0,
+    )
+
+    assert (
+        system._required_relationship(receiver)
+        == 30
+    )
+
+
+def test_low_reputation_raises_required_relationship():
+    system = CooperationSystem()
+
+    receiver = create_npc(
+        "Rahul",
+        reputation=-50,
+    )
+
+    assert (
+        system._required_relationship(receiver)
+        == 50
+    )
