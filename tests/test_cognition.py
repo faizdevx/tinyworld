@@ -236,3 +236,152 @@ def test_plan_is_interrupted_and_replanned_when_hunger_becomes_critical():
     assert npc.active_plan.goal_type == GoalType.SATISFY_HUNGER
     assert not npc.active_plan.is_interrupted()
     assert npc.active_plan.current_step == 0
+
+
+def test_agent_retrieves_memories_for_current_goal():
+    from WORLD.NPCs.memory import Memory
+
+    world = World(seed=42)
+
+    npc = NPC(
+        name="Rahul",
+        role="worker",
+        money=50,
+        home="Home",
+        location="Home",
+    )
+
+    world.add_npc(npc)
+
+    npc.remember(
+        Memory(
+            day=1,
+            hour=10,
+            event="satisfy_hunger by eating",
+            importance=1,
+        )
+    )
+
+    goal = world.agent_system.goal_system.create_long_term_goal(
+        npc=npc,
+        goal_type=GoalType.SATISFY_HUNGER,
+        priority=60,
+        current_day=world.clock.day,
+    )
+
+    npc.current_goal = goal
+
+    world.agent_system._retrieve_memories(npc)
+
+    assert len(npc.relevant_memories) == 1
+    assert (
+        npc.relevant_memories[0].event
+        == "satisfy_hunger by eating"
+    )
+
+
+def test_multi_day_trajectory_preserves_goal_and_memory_state():
+    from WORLD.NPCs.memory import Memory
+    from WORLD.Simulation.simulation import Simulation
+
+    world = World(seed=42)
+
+    npc = NPC(
+        name="Rahul",
+        role="worker",
+        money=50,
+        home="Home",
+        location="Home",
+        food=2,
+        hunger=20,
+        energy=100,
+    )
+
+    world.add_npc(npc)
+
+    goal = world.agent_system.goal_system.create_long_term_goal(
+        npc=npc,
+        goal_type=GoalType.SATISFY_HUNGER,
+        priority=60,
+        current_day=world.clock.day,
+    )
+
+    npc.remember(
+        Memory(
+            day=1,
+            hour=8,
+            event="satisfy_hunger by eating",
+            importance=1,
+        )
+    )
+
+    simulation = Simulation(world)
+
+    for _ in range(48):
+        simulation.tick()
+
+    assert world.clock.day == 3
+    assert goal in npc.long_term_goals
+    assert npc.memories
+    assert any(
+        memory.day == 1
+        for memory in npc.memories
+    )
+
+def test_different_personalities_produce_different_action_priorities():
+    from WORLD.AI.personality import Personality
+    from WORLD.AI.utility import UtilityContext, UtilitySystem
+
+    world = World(seed=42)
+
+    social_npc = NPC(
+        name="Sara",
+        role="worker",
+        money=50,
+        home="Home",
+        location="Home",
+    )
+
+    ambitious_npc = NPC(
+        name="Ali",
+        role="worker",
+        money=50,
+        home="Home",
+        location="Home",
+    )
+
+    social_npc.personality = Personality(
+        risk_tolerance=0.5,
+        sociability=1.0,
+        generosity=0.5,
+        ambition=0.2,
+        patience=0.5,
+    )
+
+    ambitious_npc.personality = Personality(
+        risk_tolerance=0.5,
+        sociability=0.2,
+        generosity=0.5,
+        ambition=1.0,
+        patience=0.5,
+    )
+
+    context = UtilityContext(
+        social_need=80,
+        money_need=80,
+        relationship_strength=50,
+    )
+
+    utility = UtilitySystem()
+
+    social_score = utility.score_socialize(
+        social_npc,
+        context,
+    )
+
+    ambitious_score = utility.score_socialize(
+        ambitious_npc,
+        context,
+    )
+
+    assert social_score > ambitious_score

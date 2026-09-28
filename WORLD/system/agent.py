@@ -3,15 +3,15 @@ from WORLD.AI.memory_retrieval import MemoryRetriever
 from WORLD.AI.perception import Perception
 from WORLD.AI.planner import Planner
 from WORLD.AI.replanner import Replanner
-
 from WORLD.AI.plan_executor import PlanExecutor
+
+
 class AgentSystem:
     """
     Coordinates the Phase 6 cognition pipeline.
 
     The existing DecisionSystem remains responsible for choosing
-    the concrete action, while this class coordinates perception,
-    goals, plans, and replanning around it.
+    concrete actions when there is no active executable plan.
     """
 
     def __init__(
@@ -63,9 +63,7 @@ class AgentSystem:
 
     def _update_beliefs(self, npc, world):
         """
-        Phase 6.14 currently uses perfect perception.
-
-        Store the latest observations directly on the NPC.
+        Update the NPC's beliefs from current perception.
         """
         observations = self.perception.observe(
             npc,
@@ -78,12 +76,7 @@ class AgentSystem:
 
     def _update_goals(self, npc, world):
         """
-        Evaluate immediate needs together with persistent
-        long-term goals, then select the highest-priority
-        active goal.
-
-        Urgent needs and long-term objectives compete through
-        the same priority-selection mechanism.
+        Evaluate immediate needs and persistent long-term goals.
         """
         immediate_goals = self.goal_system.evaluate_goals(
             npc,
@@ -98,26 +91,45 @@ class AgentSystem:
 
         all_goals = immediate_goals + long_term_goals
 
-        current_day = world.clock.day
-
         selected_goal = self.goal_system.select_highest_priority(
             all_goals,
-            current_day,
+            world.clock.day,
         )
 
-        if selected_goal is not None:
-            npc.current_goal = selected_goal
-        else:
-            npc.current_goal = None
+        npc.current_goal = selected_goal
 
         return all_goals
 
+    def _retrieve_memories(self, npc):
+        """
+        Retrieve memories relevant to the current goal.
+        """
+        current_goal = getattr(
+            npc,
+            "current_goal",
+            None,
+        )
+
+        if current_goal is None:
+            npc.relevant_memories = []
+            return []
+
+        topic = current_goal.goal_type.value
+
+        memories = self.memory_retriever.relevant_memories(
+            npc,
+            topic,
+        )
+
+        npc.relevant_memories = memories
+
+        return memories
+
     def _update_plan(self, npc, world):
         """
-        Replan an interrupted plan.
+        Create a new plan when none exists.
 
-        When no plan exists but a current goal exists, create
-        the initial plan.
+        Replace an interrupted plan through the Replanner.
         """
         active_plan = getattr(
             npc,
@@ -153,11 +165,15 @@ class AgentSystem:
 
     def _execute_plan_or_decide(self, npc, world):
         """
-        Execute the active plan when one exists.
+        Execute an active plan through PlanExecutor.
 
-        PlanExecutor owns plan interruption and execution.
-        DecisionSystem is only used when there is no active plan
-        or the plan has been completed.
+        PlanExecutor owns:
+        - interruption
+        - precondition checking
+        - action execution
+        - plan advancement
+
+        DecisionSystem is used only when there is no active plan.
         """
         active_plan = getattr(
             npc,
@@ -168,7 +184,7 @@ class AgentSystem:
         if active_plan is not None:
             if self.plan_executor is None:
                 self.plan_executor = PlanExecutor(
-                    world.action_executor
+                    world.action_executor,
                 )
 
             return self.plan_executor.execute_current_step(
@@ -192,23 +208,9 @@ class AgentSystem:
         """
         Run one cognition cycle for every NPC.
 
-        Existing active plans are executed through PlanExecutor.
-        NPCs without an existing active plan retain the legacy
+        Existing plans are executed through PlanExecutor.
+        NPCs without an existing plan retain the legacy
         DecisionSystem behavior.
-
-        Pipeline:
-
-        Perception
-            ↓
-        Beliefs
-            ↓
-        Goals
-            ↓
-        Plan / Replan
-            ↓
-        PlanExecutor OR DecisionSystem
-            ↓
-        Action
         """
         for npc in world.npcs:
             active_plan_before_update = getattr(
@@ -230,6 +232,10 @@ class AgentSystem:
             self._update_goals(
                 npc,
                 world,
+            )
+
+            self._retrieve_memories(
+                npc,
             )
 
             self._update_plan(

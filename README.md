@@ -686,3 +686,57 @@ World Changes
 New Conditions
    ↓
 New Decisions
+```
+## Phase 6
+
+### Cognition, Planning & Long-Term Goals
+
+Phase 6 adds continuity to NPC behavior. Instead of deciding only what to do right now, NPCs can pursue goals across multiple ticks and days.
+
+What Phase 6 Adds
+
+Persistent goals with priorities, deadlines, and progress
+
+Multi-step plans and plan execution
+
+Action preconditions and effects
+
+Planning, interruption, and replanning
+
+Beliefs and perception
+
+Memory retrieval
+
+Personality parameters and personality-aware utility
+
+Long-term goals
+
+Multi-day agent trajectories
+
+### agent Flow
+```
+World State
+    ↓
+Perception
+    ↓
+Beliefs
+    ↓
+Long-Term Goals
+    ↓
+Plan
+    ↓
+Decision
+    ↓
+Action
+    ↓
+Consequences
+    ↓
+Memory / Learning
+    ↓
+Updated Internal State
+``` 
+
+Tests: 271 passed
+
+Phase 6 keeps Python deterministic and reality-authoritative while giving NPCs persistent internal state and multi-step behavior.
+
