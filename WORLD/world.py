@@ -13,6 +13,8 @@ from WORLD.Rest.rest import RestSystem
 from WORLD.Social.social import SocialSystem
 from WORLD.AI.decision import DecisionSystem
 from WORLD.AI.action_executor import ActionExecutor
+from WORLD.AI.brain import Brain
+from WORLD.AI.plan_executor import PlanExecutor
 from WORLD.system.agent import AgentSystem
 from WORLD.Events.event_log import EventLog
 from WORLD.Economy.pricing import PricingSystem
@@ -84,6 +86,20 @@ class World:
 
 
     def add_npc(self, npc: NPC) -> None:
+        npc.brain = Brain(
+            npc=npc,
+            perception=self.agent_system.perception,
+            goal_system=self.agent_system.goal_system,
+            planner=self.agent_system.planner,
+            replanner=self.agent_system.replanner,
+            memory_retriever=self.agent_system.memory_retriever,
+            decision_system=self.decision_system,
+            action_executor=self.action_executor,
+            plan_executor=PlanExecutor(
+                self.action_executor,
+            ),
+        )
+
         self.npcs.append(npc)
 
     def add_building(self, building: Building) -> None:

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import ClassVar, Optional
 
+from WORLD.AI.brain import Brain
 from WORLD.Map.position import Position
 from WORLD.NPCs.memory import Memory
 from WORLD.NPCs.relationship import Relationship
@@ -21,6 +22,11 @@ class NPC:
     relationships: dict[str, Relationship] = field(default_factory=dict)
     memories: list[Memory] = field(default_factory=list)
     reputation:int=0
+    brain: Brain | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
     MAX_MEMORIES: ClassVar[int] = 50
 
     def __post_init__(self) -> None:
