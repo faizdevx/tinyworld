@@ -1,3 +1,4 @@
+from WORLD.AI.brain import Brain
 from WORLD.AI.goal_system import GoalSystem
 from WORLD.AI.memory_retrieval import MemoryRetriever
 from WORLD.AI.perception import Perception
@@ -8,10 +9,10 @@ from WORLD.AI.plan_executor import PlanExecutor
 
 class AgentSystem:
     """
-    Coordinates the Phase 6 cognition pipeline.
+    Compatibility adapter around the NPC Brain.
 
-    The existing DecisionSystem remains responsible for choosing
-    concrete actions when there is no active executable plan.
+    The Brain owns cognition. AgentSystem only makes sure
+    every NPC has a Brain and delegates the update.
     """
 
     def __init__(
@@ -61,201 +62,74 @@ class AgentSystem:
 
         self.plan_executor = plan_executor
 
-    def _update_beliefs(self, npc, world):
+    def _ensure_brain(self, npc):
         """
-        Update the NPC's beliefs from current perception.
+        Attach a Brain when one is missing.
+
+        This keeps older tests and lightweight NPC doubles
+        compatible with the new architecture.
         """
-        observations = self.perception.observe(
-            npc,
-            world,
-        )
+        if getattr(npc, "brain", None) is None:
+            npc.brain = Brain(
+                npc=npc,
+                perception=self.perception,
+                goal_system=self.goal_system,
+                planner=self.planner,
+                replanner=self.replanner,
+                memory_retriever=self.memory_retriever,
+                decision_system=self.decision_system,
+                action_executor=None,
+                plan_executor=self.plan_executor,
+            )
 
-        npc.beliefs = observations
-
-        return observations
+        return npc.brain
 
     def _update_goals(self, npc, world):
         """
-        Evaluate immediate needs and persistent long-term goals.
+        Compatibility shim for callers of the Phase 6 API.
         """
-        immediate_goals = self.goal_system.evaluate_goals(
-            npc,
-            world,
-        )
-
-        long_term_goals = [
-            goal
-            for goal in self.goal_system.get_long_term_goals(npc)
-            if not self.goal_system.is_goal_complete(goal)
-        ]
-
-        all_goals = immediate_goals + long_term_goals
-
-        selected_goal = self.goal_system.select_highest_priority(
-            all_goals,
-            world.clock.day,
-        )
-
-        npc.current_goal = selected_goal
-
-        return all_goals
+        thought = self._ensure_brain(npc).think(world)
+        return thought["goals"]
 
     def _retrieve_memories(self, npc):
         """
-        Retrieve memories relevant to the current goal.
+        Compatibility shim for callers of the Phase 6 API.
         """
-        current_goal = getattr(
-            npc,
-            "current_goal",
-            None,
-        )
-
-        if current_goal is None:
-            npc.relevant_memories = []
-            return []
-
-        topic = current_goal.goal_type.value
-
-        memories = self.memory_retriever.relevant_memories(
-            npc,
-            topic,
-        )
-
-        npc.relevant_memories = memories
-
-        return memories
+        return self._ensure_brain(npc).retrieve_memories()
 
     def _update_plan(self, npc, world):
         """
-        Create a new plan when none exists.
-
-        Replace an interrupted plan through the Replanner.
+        Compatibility shim for callers of the Phase 6 API.
         """
-        active_plan = getattr(
-            npc,
-            "active_plan",
-            None,
-        )
-
-        if active_plan is not None:
-            if self.replanner.needs_replanning(npc):
-                return self.replanner.replan(
-                    npc,
-                    world,
-                )
-
-            return active_plan
-
-        current_goal = getattr(
-            npc,
-            "current_goal",
-            None,
-        )
-
-        if current_goal is None:
-            return None
-
-        npc.active_plan = self.planner.create_plan(
-            npc,
-            current_goal,
-            world,
-        )
-
-        return npc.active_plan
+        return self._ensure_brain(npc).plan(world)
 
     def _execute_plan_or_decide(self, npc, world):
         """
-        Execute an active plan through PlanExecutor.
-
-        PlanExecutor owns:
-        - interruption
-        - precondition checking
-        - action execution
-        - plan advancement
-
-        DecisionSystem is used only when there is no active plan.
+        Compatibility shim for callers of the Phase 6 API.
         """
-        active_plan = getattr(
-            npc,
-            "active_plan",
-            None,
-        )
+        brain = self._ensure_brain(npc)
 
-        if active_plan is not None:
-            if self.plan_executor is None:
-                self.plan_executor = PlanExecutor(
-                    world.action_executor,
-                )
+        if getattr(brain, "action_executor", None) is None:
+            brain.action_executor = world.action_executor
 
-            return self.plan_executor.execute_current_step(
-                npc,
-                active_plan,
-                world,
-            )
+        if getattr(brain, "plan_executor", None) is None:
+            brain.plan_executor = PlanExecutor(world.action_executor)
 
-        decision = self.decision_system.decide(
-            npc,
-            world,
-        )
-
-        return world.action_executor.execute(
-            npc,
-            decision.chosen_action,
-            world,
-        )
+        return brain.act(world, had_active_plan=True)
 
     def update(self, world):
         """
-        Run one cognition cycle for every NPC.
-
-        Existing plans are executed through PlanExecutor.
-        NPCs without an existing plan retain the legacy
-        DecisionSystem behavior.
+        Delegate cognition to each NPC's Brain.
         """
         for npc in world.npcs:
-            active_plan_before_update = getattr(
-                npc,
-                "active_plan",
-                None,
-            )
+            brain = self._ensure_brain(npc)
 
-            had_active_plan = (
-                active_plan_before_update is not None
-                and not active_plan_before_update.is_complete()
-            )
+            if getattr(brain, "action_executor", None) is None:
+                brain.action_executor = world.action_executor
 
-            self._update_beliefs(
-                npc,
-                world,
-            )
-
-            self._update_goals(
-                npc,
-                world,
-            )
-
-            self._retrieve_memories(
-                npc,
-            )
-
-            self._update_plan(
-                npc,
-                world,
-            )
-
-            if had_active_plan:
-                self._execute_plan_or_decide(
-                    npc,
-                    world,
-                )
-            else:
-                decision = self.decision_system.decide(
-                    npc,
-                    world,
+            if getattr(brain, "plan_executor", None) is None:
+                brain.plan_executor = PlanExecutor(
+                    world.action_executor
                 )
 
-                world.action_executor.execute(
-                    npc,
-                    decision.chosen_action,
-                    world,
-                )
+            brain.update(world)

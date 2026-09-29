@@ -130,8 +130,8 @@ def test_agent_creates_plan_for_current_goal():
     assert npc.active_plan is not None
     assert npc.active_plan.goal_type == GoalType.SATISFY_HUNGER
     assert npc.active_plan.actions == [
-        "obtain_food",
-        "eat",
+        ActionType.OBTAIN_FOOD,
+        ActionType.EAT,
     ]
 
 
@@ -149,8 +149,8 @@ def test_agent_replans_interrupted_plan():
     npc.active_plan = Plan(
         goal_type=GoalType.EARN_MONEY,
         actions=[
-            "go_to_work",
-            "work",
+            ActionType.GO_TO_WORK,
+            ActionType.WORK,
         ],
     )
 

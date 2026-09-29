@@ -1,3 +1,5 @@
+import pytest
+
 from WORLD.AI.action import ActionType
 from WORLD.AI.plan_executor import PlanExecutor
 from WORLD.AI.plans import Plan
@@ -33,7 +35,7 @@ def test_plan_executor_runs_current_step():
 
     plan = Plan(
         goal_type=None,
-        actions=["buy_food"],
+        actions=[ActionType.SHOP],
     )
 
     executor = PlanExecutor(fake_executor)
@@ -61,7 +63,7 @@ def test_plan_executor_does_not_advance_when_action_fails():
 
     plan = Plan(
         goal_type=None,
-        actions=["buy_food"],
+        actions=[ActionType.SHOP],
     )
 
     executor = PlanExecutor(fake_executor)
@@ -84,7 +86,7 @@ def test_completed_plan_does_not_execute():
 
     plan = Plan(
         goal_type=None,
-        actions=["buy_food"],
+        actions=[ActionType.SHOP],
         current_step=1,
     )
 
@@ -100,25 +102,9 @@ def test_completed_plan_does_not_execute():
     assert fake_executor.calls == []
 
 
-def test_unknown_plan_step_does_not_advance():
-    world = World()
-    npc = create_npc()
-
-    fake_executor = FakeActionExecutor()
-
-    plan = Plan(
-        goal_type=None,
-        actions=["go_to_shop"],
-    )
-
-    executor = PlanExecutor(fake_executor)
-
-    result = executor.execute_current_step(
-        npc,
-        plan,
-        world,
-    )
-
-    assert result is False
-    assert plan.current_step == 0
-    assert fake_executor.calls == []
+def test_raw_plan_step_is_rejected():
+    with pytest.raises(TypeError, match="ActionType"):
+        Plan(
+            goal_type=None,
+            actions=["go_to_shop"],
+        )

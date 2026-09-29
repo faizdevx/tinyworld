@@ -1,3 +1,4 @@
+from WORLD.AI.action import ActionType
 from WORLD.AI.goal import GoalType
 from WORLD.AI.plan_executor import PlanExecutor
 from WORLD.AI.plans import Plan
@@ -33,7 +34,7 @@ def test_plan_is_not_interrupted_under_normal_conditions():
     plan = Plan(
         goal_type=GoalType.EARN_MONEY,
         actions=[
-            "work",
+            ActionType.WORK,
         ],
     )
 
@@ -55,7 +56,7 @@ def test_high_hunger_interrupts_money_plan():
     plan = Plan(
         goal_type=GoalType.EARN_MONEY,
         actions=[
-            "work",
+            ActionType.WORK,
         ],
     )
 
@@ -77,8 +78,8 @@ def test_hunger_goal_is_not_interrupted_by_hunger():
     plan = Plan(
         goal_type=GoalType.SATISFY_HUNGER,
         actions=[
-            "obtain_food",
-            "eat",
+            ActionType.OBTAIN_FOOD,
+            ActionType.EAT,
         ],
     )
 
@@ -100,7 +101,7 @@ def test_interrupt_marks_plan():
     plan = Plan(
         goal_type=GoalType.EARN_MONEY,
         actions=[
-            "work",
+            ActionType.WORK,
         ],
     )
 
@@ -127,7 +128,7 @@ def test_interrupted_plan_does_not_execute():
     plan = Plan(
         goal_type=GoalType.EARN_MONEY,
         actions=[
-            "work",
+            ActionType.WORK,
         ],
     )
 

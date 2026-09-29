@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from WORLD.AI.action import ActionType
 from WORLD.AI.goal import GoalType
 from WORLD.AI.goal_system import GoalSystem
 from WORLD.AI.planner import Planner
@@ -45,7 +46,7 @@ def test_active_plan_does_not_require_replanning():
 
     npc.active_plan = Plan(
         goal_type=GoalType.EARN_MONEY,
-        actions=["go_to_work", "work"],
+        actions=[ActionType.GO_TO_WORK, ActionType.WORK],
     )
 
     replanner = make_replanner()
@@ -58,7 +59,7 @@ def test_interrupted_plan_requires_replanning():
 
     npc.active_plan = Plan(
         goal_type=GoalType.EARN_MONEY,
-        actions=["go_to_work", "work"],
+        actions=[ActionType.GO_TO_WORK, ActionType.WORK],
     )
 
     npc.active_plan.interrupt()
@@ -76,7 +77,7 @@ def test_replanning_selects_current_highest_priority_goal():
 
     npc.active_plan = Plan(
         goal_type=GoalType.EARN_MONEY,
-        actions=["go_to_work", "work"],
+        actions=[ActionType.GO_TO_WORK, ActionType.WORK],
     )
 
     npc.active_plan.interrupt()
@@ -97,7 +98,7 @@ def test_replanning_replaces_interrupted_plan():
 
     old_plan = Plan(
         goal_type=GoalType.EARN_MONEY,
-        actions=["go_to_work", "work"],
+        actions=[ActionType.GO_TO_WORK, ActionType.WORK],
     )
 
     old_plan.interrupt()
@@ -119,7 +120,7 @@ def test_replanning_creates_plan_for_selected_goal():
 
     old_plan = Plan(
         goal_type=GoalType.EARN_MONEY,
-        actions=["go_to_work", "work"],
+        actions=[ActionType.GO_TO_WORK, ActionType.WORK],
     )
 
     old_plan.interrupt()
@@ -132,7 +133,10 @@ def test_replanning_creates_plan_for_selected_goal():
     new_plan = replanner.replan(npc, world)
 
     assert new_plan.goal_type == GoalType.SATISFY_HUNGER
-    assert new_plan.actions == ["obtain_food", "eat"]
+    assert new_plan.actions == [
+        ActionType.OBTAIN_FOOD,
+        ActionType.EAT,
+    ]
 
 
 def test_no_replanning_occurs_without_interruption():
@@ -140,7 +144,7 @@ def test_no_replanning_occurs_without_interruption():
 
     npc.active_plan = Plan(
         goal_type=GoalType.EARN_MONEY,
-        actions=["go_to_work", "work"],
+        actions=[ActionType.GO_TO_WORK, ActionType.WORK],
     )
 
     world = make_world(npc)
@@ -150,4 +154,7 @@ def test_no_replanning_occurs_without_interruption():
     result = replanner.replan(npc, world)
 
     assert result is None
-    assert npc.active_plan.actions == ["go_to_work", "work"]
+    assert npc.active_plan.actions == [
+        ActionType.GO_TO_WORK,
+        ActionType.WORK,
+    ]

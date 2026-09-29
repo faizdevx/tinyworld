@@ -6,15 +6,6 @@ from WORLD.AI.plans import Plan
 class PlanExecutor:
     HUNGER_INTERRUPT_THRESHOLD = 95
 
-    ACTION_MAP = {
-        "eat": ActionType.EAT,
-        "sleep": ActionType.SLEEP,
-        "work": ActionType.WORK,
-        "shop": ActionType.SHOP,
-        "buy_food": ActionType.SHOP,
-        "socialize": ActionType.SOCIALIZE,
-    }
-
     def __init__(self, action_executor):
         self.action_executor = action_executor
 
@@ -40,23 +31,29 @@ class PlanExecutor:
         plan.interrupt()
         return True
 
-    def execute_current_step(self, npc, plan: Plan, world) -> bool:
+    def execute_current_step(
+        self,
+        npc,
+        plan: Plan,
+        world,
+    ) -> bool:
         if plan.is_complete() or plan.is_interrupted():
             return False
 
         if self.interrupt_if_needed(npc, plan):
             return False
 
-        step = plan.current_action()
+        action = plan.current_action()
 
-        if step not in self.ACTION_MAP:
+        if action is None:
             return False
 
-        action_type = self.ACTION_MAP[step]
+        if not isinstance(action, ActionType):
+            return False
 
         success = self.action_executor.execute(
             npc,
-            action_type,
+            action,
             world,
         )
 

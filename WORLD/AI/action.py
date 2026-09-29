@@ -8,6 +8,13 @@ class ActionType(Enum):
     WORK = "work"
     SHOP = "shop"
     SOCIALIZE = "socialize"
+    GO_TO_WORK = "go_to_work"
+    FIND_FOOD = "find_food"
+    OBTAIN_FOOD = "obtain_food"
+    GO_HOME = "go_home"
+    FIND_FAMILY = "find_family"
+    HELP_FAMILY = "help_family"
+    MAINTAIN_HOME = "maintain_home"
 
 
 

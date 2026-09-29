@@ -1,3 +1,4 @@
+from WORLD.AI.action import ActionType
 from WORLD.AI.goal import Goal, GoalType
 from WORLD.AI.planner import Planner
 from WORLD.world import World
@@ -23,8 +24,8 @@ def test_planner_creates_work_plan():
 
     assert plan.goal_type == GoalType.EARN_MONEY
     assert plan.actions == [
-        "go_to_work",
-        "work",
+        ActionType.GO_TO_WORK,
+        ActionType.WORK,
     ]
 
 
@@ -39,9 +40,9 @@ def test_planner_creates_survival_plan():
     )
 
     assert plan.actions == [
-        "find_food",
-        "obtain_food",
-        "eat",
+        ActionType.FIND_FOOD,
+        ActionType.OBTAIN_FOOD,
+        ActionType.EAT,
     ]
 
 
@@ -56,8 +57,8 @@ def test_planner_creates_hunger_plan():
     )
 
     assert plan.actions == [
-        "obtain_food",
-        "eat",
+        ActionType.OBTAIN_FOOD,
+        ActionType.EAT,
     ]
 
 
@@ -72,8 +73,8 @@ def test_planner_creates_energy_plan():
     )
 
     assert plan.actions == [
-        "go_home",
-        "sleep",
+        ActionType.GO_HOME,
+        ActionType.SLEEP,
     ]
 
 
@@ -88,7 +89,7 @@ def test_planner_creates_social_plan():
     )
 
     assert plan.actions == [
-        "socialize",
+        ActionType.SOCIALIZE,
     ]
 
 

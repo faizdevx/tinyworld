@@ -1,9 +1,12 @@
+from WORLD.AI.plan_executor import PlanExecutor
+
+
 class Brain:
     """
     Unified deterministic cognition coordinator for one NPC.
 
-    The Brain owns the lifecycle of cognition while the
-    individual systems remain independent components.
+    The Brain owns the NPC cognition lifecycle while the
+    underlying systems remain independent components.
     """
 
     def __init__(
@@ -33,6 +36,9 @@ class Brain:
         self.reflection = reflection
 
     def observe(self, world):
+        """
+        Observe the current world state and update beliefs.
+        """
         observations = self.perception.observe(
             self.npc,
             world,
@@ -43,6 +49,10 @@ class Brain:
         return observations
 
     def think(self, world):
+        """
+        Evaluate immediate needs and persistent goals,
+        then retrieve memories relevant to the selected goal.
+        """
         immediate_goals = self.goal_system.evaluate_goals(
             self.npc,
             world,
@@ -65,17 +75,7 @@ class Brain:
 
         self.npc.current_goal = selected_goal
 
-        memories = []
-
-        if selected_goal is not None:
-            topic = selected_goal.goal_type.value
-
-            memories = self.memory_retriever.relevant_memories(
-                self.npc,
-                topic,
-            )
-
-        self.npc.relevant_memories = memories
+        memories = self.retrieve_memories()
 
         return {
             "goals": goals,
@@ -83,7 +83,36 @@ class Brain:
             "memories": memories,
         }
 
+    def retrieve_memories(self):
+        """
+        Retrieve memories relevant to the current goal.
+        """
+        current_goal = getattr(
+            self.npc,
+            "current_goal",
+            None,
+        )
+
+        if current_goal is None:
+            self.npc.relevant_memories = []
+            return []
+
+        topic = current_goal.goal_type.value
+
+        memories = self.memory_retriever.relevant_memories(
+            self.npc,
+            topic,
+        )
+
+        self.npc.relevant_memories = memories
+
+        return memories
+
     def plan(self, world):
+        """
+        Continue an existing plan, replan an interrupted plan,
+        or create a new plan for the current goal.
+        """
         active_plan = getattr(
             self.npc,
             "active_plan",
@@ -118,26 +147,39 @@ class Brain:
 
         return self.npc.active_plan
 
-    def act(self, world):
-        if self.plan_executor is None:
-            return self._legacy_decision(world)
+    def act(self, world, had_active_plan=False):
+        """
+        Execute an existing plan when one existed before this
+        cognition cycle.
 
-        active_plan = getattr(
-            self.npc,
-            "active_plan",
-            None,
-        )
-
-        if active_plan is not None:
-            return self.plan_executor.execute_current_step(
+        Otherwise preserve the legacy DecisionSystem behavior.
+        """
+        if had_active_plan:
+            active_plan = getattr(
                 self.npc,
-                active_plan,
-                world,
+                "active_plan",
+                None,
             )
+
+            if active_plan is not None:
+                if self.plan_executor is None:
+                    self.plan_executor = PlanExecutor(
+                        self.action_executor
+                    )
+
+                return self.plan_executor.execute_current_step(
+                    self.npc,
+                    active_plan,
+                    world,
+                )
 
         return self._legacy_decision(world)
 
     def reflect(self, world, result):
+        """
+        Give the optional reflection component the outcome
+        of the action.
+        """
         if self.reflection is None:
             return None
 
@@ -148,13 +190,30 @@ class Brain:
         )
 
     def update(self, world):
+        """
+        Execute one complete cognition lifecycle.
+        """
+        active_plan_before_update = getattr(
+            self.npc,
+            "active_plan",
+            None,
+        )
+
+        had_active_plan = (
+            active_plan_before_update is not None
+            and not active_plan_before_update.is_complete()
+        )
+
         self.observe(world)
 
-        thought = self.think(world)
+        self.think(world)
 
         self.plan(world)
 
-        result = self.act(world)
+        result = self.act(
+            world,
+            had_active_plan=had_active_plan,
+        )
 
         self.reflect(
             world,
@@ -164,6 +223,11 @@ class Brain:
         return result
 
     def _legacy_decision(self, world):
+        """
+        Preserve the existing deterministic DecisionSystem
+        behavior for NPCs without an active plan at the start
+        of the cognition cycle.
+        """
         decision = self.decision_system.decide(
             self.npc,
             world,

@@ -1,3 +1,4 @@
+from WORLD.AI.action import ActionType
 from WORLD.AI.goal import GoalType
 from WORLD.AI.plans import Plan
 
@@ -10,8 +11,8 @@ class Planner:
             return Plan(
                 goal_type=goal_type,
                 actions=[
-                    "go_to_work",
-                    "work",
+                    ActionType.GO_TO_WORK,
+                    ActionType.WORK,
                 ],
             )
 
@@ -19,9 +20,9 @@ class Planner:
             return Plan(
                 goal_type=goal_type,
                 actions=[
-                    "find_food",
-                    "obtain_food",
-                    "eat",
+                    ActionType.FIND_FOOD,
+                    ActionType.OBTAIN_FOOD,
+                    ActionType.EAT,
                 ],
             )
 
@@ -29,8 +30,8 @@ class Planner:
             return Plan(
                 goal_type=goal_type,
                 actions=[
-                    "obtain_food",
-                    "eat",
+                    ActionType.OBTAIN_FOOD,
+                    ActionType.EAT,
                 ],
             )
 
@@ -38,8 +39,8 @@ class Planner:
             return Plan(
                 goal_type=goal_type,
                 actions=[
-                    "go_home",
-                    "sleep",
+                    ActionType.GO_HOME,
+                    ActionType.SLEEP,
                 ],
             )
 
@@ -47,7 +48,7 @@ class Planner:
             return Plan(
                 goal_type=goal_type,
                 actions=[
-                    "socialize",
+                    ActionType.SOCIALIZE,
                 ],
             )
 
@@ -55,7 +56,7 @@ class Planner:
             return Plan(
                 goal_type=goal_type,
                 actions=[
-                    "socialize",
+                    ActionType.SOCIALIZE,
                 ],
             )
 
@@ -63,8 +64,8 @@ class Planner:
             return Plan(
                 goal_type=goal_type,
                 actions=[
-                    "find_family",
-                    "help_family",
+                    ActionType.FIND_FAMILY,
+                    ActionType.HELP_FAMILY,
                 ],
             )
 
@@ -72,8 +73,8 @@ class Planner:
             return Plan(
                 goal_type=goal_type,
                 actions=[
-                    "go_home",
-                    "maintain_home",
+                    ActionType.GO_HOME,
+                    ActionType.MAINTAIN_HOME,
                 ],
             )
 

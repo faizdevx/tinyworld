@@ -1,6 +1,7 @@
 
 from WORLD.world import World
 from WORLD.NPCs.npc import NPC
+from WORLD.AI.action import ActionType
 from WORLD.AI.goal import GoalType
 from WORLD.AI.plans import Plan
 
@@ -131,7 +132,7 @@ def test_active_plan_executes_supported_action():
 
     npc.active_plan = Plan(
         goal_type=GoalType.SATISFY_HUNGER,
-        actions=["eat"],
+        actions=[ActionType.EAT],
     )
 
     world.agent_system._execute_plan_or_decide(
@@ -161,7 +162,7 @@ def test_multi_step_plan_persists_across_agent_updates():
 
     npc.active_plan = Plan(
         goal_type=GoalType.SATISFY_HUNGER,
-        actions=["eat", "eat"],
+        actions=[ActionType.EAT, ActionType.EAT],
     )
 
     world.agent_system.update(world)
