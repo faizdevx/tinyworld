@@ -44,3 +44,7 @@ def test_npc_brain_receives_world_cognition_components():
     assert npc.brain.decision_system is world.decision_system
     assert npc.brain.action_executor is world.action_executor
     assert npc.brain.plan_executor is not None
+    assert (
+        npc.brain.experience_reflector
+        is world.agent_system.experience_reflector
+    )

@@ -100,6 +100,9 @@ class World:
             ),
             reasoner=self.agent_system.reasoner,
             reflection=self.agent_system.reflection,
+            experience_reflector=(
+                self.agent_system.experience_reflector
+            ),
         )
 
         self.npcs.append(npc)

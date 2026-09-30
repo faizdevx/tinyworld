@@ -2,6 +2,10 @@ from types import SimpleNamespace
 
 from WORLD.AI.action import ActionType
 from WORLD.AI.brain import Brain
+from WORLD.AI.experience_reflection import (
+    ExperienceReflector,
+)
+from WORLD.NPCs.memory import Memory
 
 
 class FakePerception:
@@ -28,14 +32,34 @@ class FakeGoalSystem:
         return []
 
     def select_highest_priority(self, goals, current_day):
-        return None
+        return getattr(self, "selected_goal", None)
 
     def is_goal_complete(self, goal):
         return False
 
 
 class FakeMemoryRetriever:
-    def relevant_memories(self, npc, topic):
+    def __init__(self):
+        self.calls = []
+
+    def retrieve(
+        self,
+        npc,
+        query,
+        *,
+        limit=5,
+        min_importance=0.0,
+        current_timestamp=None,
+    ):
+        self.calls.append(
+            {
+                "npc": npc,
+                "query": query,
+                "limit": limit,
+                "min_importance": min_importance,
+                "current_timestamp": current_timestamp,
+            }
+        )
         return []
 
 
@@ -120,16 +144,23 @@ def test_brain_observes_npc_state():
         memories=[],
     )
 
-    world = SimpleNamespace(clock=SimpleNamespace(day=1))
+    world = SimpleNamespace(
+        clock=SimpleNamespace(day=1, hour=8)
+    )
     perception = FakePerception()
+    goal_system = FakeGoalSystem()
+    goal_system.selected_goal = SimpleNamespace(
+        goal_type=SimpleNamespace(value="test_goal")
+    )
+    memory_retriever = FakeMemoryRetriever()
 
     brain = Brain(
         npc=npc,
         perception=perception,
-        goal_system=FakeGoalSystem(),
+        goal_system=goal_system,
         planner=None,
         replanner=None,
-        memory_retriever=FakeMemoryRetriever(),
+        memory_retriever=memory_retriever,
         decision_system=FakeDecisionSystem(),
         action_executor=FakeActionExecutor(),
     )
@@ -139,6 +170,18 @@ def test_brain_observes_npc_state():
     assert observations[0].predicate == "hunger"
     assert observations[0].value == 75
     assert npc.beliefs == observations
+
+    brain.think(world)
+
+    assert memory_retriever.calls == [
+        {
+            "npc": npc,
+            "query": "test_goal",
+            "limit": 5,
+            "min_importance": 0.0,
+            "current_timestamp": 8,
+        }
+    ]
 
 
 def test_brain_records_reasoning_result():
@@ -219,7 +262,14 @@ def test_brain_lifecycle_calls_reflection_after_action():
         active_plan=None,
         current_goal=None,
         long_term_goals=[],
-        memories=[],
+        memories=[
+            Memory(
+                day=1,
+                hour=10,
+                event="Ali helped Rahul",
+                importance=0.9,
+            )
+        ],
     )
 
     world = SimpleNamespace(clock=SimpleNamespace(day=1))
@@ -236,6 +286,7 @@ def test_brain_lifecycle_calls_reflection_after_action():
         action_executor=FakeActionExecutor(),
         reasoner=FakeReasoner(),
         reflection=reflection,
+        experience_reflector=ExperienceReflector(),
     )
 
     brain.update(world)
@@ -243,3 +294,74 @@ def test_brain_lifecycle_calls_reflection_after_action():
     assert len(reflection.calls) == 1
     assert reflection.calls[0]["result"] is True
     assert reflection.calls[0]["reasoning"] is brain.last_reasoning
+    assert brain.last_experience_reflection is None
+
+
+def test_brain_can_reflect_on_memory():
+    npc = SimpleNamespace(
+        name="Rahul",
+        memories=[],
+        current_goal=None,
+    )
+
+    brain = Brain(
+        npc=npc,
+        perception=None,
+        goal_system=None,
+        planner=None,
+        replanner=None,
+        memory_retriever=None,
+        decision_system=None,
+        action_executor=None,
+        experience_reflector=ExperienceReflector(),
+    )
+
+    memory = Memory(
+        day=1,
+        hour=10,
+        event="Ali helped Rahul",
+        importance=0.9,
+        participants=["Rahul", "Ali"],
+    )
+
+    reflection = brain.reflect_on_memory(
+        memory,
+    )
+
+    assert reflection is not None
+    assert brain.last_experience_reflection is reflection
+    assert reflection.memory is memory
+
+
+def test_brain_does_not_reflect_on_unimportant_memory():
+    npc = SimpleNamespace(
+        name="Rahul",
+        memories=[],
+        current_goal=None,
+    )
+
+    brain = Brain(
+        npc=npc,
+        perception=None,
+        goal_system=None,
+        planner=None,
+        replanner=None,
+        memory_retriever=None,
+        decision_system=None,
+        action_executor=None,
+        experience_reflector=ExperienceReflector(),
+    )
+
+    memory = Memory(
+        day=1,
+        hour=10,
+        event="Walked to the farm",
+        importance=0.1,
+    )
+
+    reflection = brain.reflect_on_memory(
+        memory,
+    )
+
+    assert reflection is None
+    assert brain.last_experience_reflection is None

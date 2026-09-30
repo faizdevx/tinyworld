@@ -23,6 +23,7 @@ class Brain:
         plan_executor=None,
         reasoner=None,
         reflection=None,
+        experience_reflector=None,
     ):
         self.npc = npc
         self.perception = perception
@@ -39,8 +40,10 @@ class Brain:
             else Reasoner(decision_system)
         )
         self.reflection = reflection
+        self.experience_reflector = experience_reflector
         self.last_reasoning = None
         self.last_reflection = None
+        self.last_experience_reflection = None
 
     def observe(self, world):
         """
@@ -82,7 +85,7 @@ class Brain:
 
         self.npc.current_goal = selected_goal
 
-        memories = self.retrieve_memories()
+        memories = self.retrieve_memories(world)
 
         return {
             "goals": goals,
@@ -90,7 +93,7 @@ class Brain:
             "memories": memories,
         }
 
-    def retrieve_memories(self):
+    def retrieve_memories(self, world=None):
         """
         Retrieve memories relevant to the current goal.
         """
@@ -106,9 +109,24 @@ class Brain:
 
         topic = current_goal.goal_type.value
 
-        memories = self.memory_retriever.relevant_memories(
+        current_timestamp = None
+        if world is not None:
+            clock = getattr(world, "clock", None)
+            day = getattr(clock, "day", None)
+            hour = getattr(clock, "hour", None)
+
+            if day is not None and hour is not None:
+                current_timestamp = (
+                    (day - 1) * 24
+                    + hour
+                )
+
+        memories = self.memory_retriever.retrieve(
             self.npc,
             topic,
+            limit=5,
+            min_importance=0.0,
+            current_timestamp=current_timestamp,
         )
 
         self.npc.relevant_memories = memories
@@ -218,6 +236,24 @@ class Brain:
         )
 
         self.last_reflection = reflection
+
+        return reflection
+
+    def reflect_on_memory(
+        self,
+        memory,
+        current_goal=None,
+    ):
+        if self.experience_reflector is None:
+            return None
+
+        reflection = self.experience_reflector.reflect(
+            self.npc,
+            memory,
+            current_goal=current_goal,
+        )
+
+        self.last_experience_reflection = reflection
 
         return reflection
 

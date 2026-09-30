@@ -7,6 +7,7 @@ from WORLD.AI.replanner import Replanner
 from WORLD.AI.plan_executor import PlanExecutor
 from WORLD.AI.reasoner import Reasoner
 from WORLD.AI.reflection import Reflection
+from WORLD.AI.experience_reflection import ExperienceReflector
 
 
 class AgentSystem:
@@ -28,6 +29,7 @@ class AgentSystem:
         plan_executor=None,
         reasoner=None,
         reflection=None,
+        experience_reflector=None,
     ):
         self.decision_system = decision_system
 
@@ -77,6 +79,11 @@ class AgentSystem:
             if reflection is not None
             else Reflection()
         )
+        self.experience_reflector = (
+            experience_reflector
+            if experience_reflector is not None
+            else ExperienceReflector()
+        )
 
     def _ensure_brain(self, npc):
         """
@@ -98,6 +105,9 @@ class AgentSystem:
                 plan_executor=self.plan_executor,
                 reasoner=self.reasoner,
                 reflection=self.reflection,
+                experience_reflector=(
+                    self.experience_reflector
+                ),
             )
 
         return npc.brain
