@@ -98,6 +98,8 @@ class World:
             plan_executor=PlanExecutor(
                 self.action_executor,
             ),
+            reasoner=self.agent_system.reasoner,
+            reflection=self.agent_system.reflection,
         )
 
         self.npcs.append(npc)

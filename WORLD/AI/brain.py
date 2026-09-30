@@ -1,4 +1,5 @@
 from WORLD.AI.plan_executor import PlanExecutor
+from WORLD.AI.reasoner import Reasoner
 
 
 class Brain:
@@ -32,8 +33,14 @@ class Brain:
         self.decision_system = decision_system
         self.action_executor = action_executor
         self.plan_executor = plan_executor
-        self.reasoner = reasoner
+        self.reasoner = (
+            reasoner
+            if reasoner is not None
+            else Reasoner(decision_system)
+        )
         self.reflection = reflection
+        self.last_reasoning = None
+        self.last_reflection = None
 
     def observe(self, world):
         """
@@ -149,31 +156,51 @@ class Brain:
 
     def act(self, world, had_active_plan=False):
         """
-        Execute an existing plan when one existed before this
-        cognition cycle.
+        Execute the action selected by the current reasoning state.
 
-        Otherwise preserve the legacy DecisionSystem behavior.
+        Existing plans still go through PlanExecutor. NPCs without a
+        plan from the start of the cycle retain the legacy behavior.
         """
-        if had_active_plan:
-            active_plan = getattr(
+        active_plan = getattr(
+            self.npc,
+            "active_plan",
+            None,
+        )
+
+        reasoning = self.reasoner.reason(
+            self.npc,
+            world,
+            had_active_plan=had_active_plan,
+            current_goal=getattr(
                 self.npc,
-                "active_plan",
+                "current_goal",
                 None,
-            )
+            ),
+            active_plan=active_plan,
+        )
 
-            if active_plan is not None:
-                if self.plan_executor is None:
-                    self.plan_executor = PlanExecutor(
-                        self.action_executor
-                    )
+        self.last_reasoning = reasoning
 
-                return self.plan_executor.execute_current_step(
-                    self.npc,
-                    active_plan,
-                    world,
+        if had_active_plan and active_plan is not None:
+            if self.plan_executor is None:
+                self.plan_executor = PlanExecutor(
+                    self.action_executor
                 )
 
-        return self._legacy_decision(world)
+            return self.plan_executor.execute_current_step(
+                self.npc,
+                active_plan,
+                world,
+            )
+
+        if reasoning.action is None:
+            return False
+
+        return self.action_executor.execute(
+            self.npc,
+            reasoning.action,
+            world,
+        )
 
     def reflect(self, world, result):
         """
@@ -183,11 +210,16 @@ class Brain:
         if self.reflection is None:
             return None
 
-        return self.reflection.reflect(
+        reflection = self.reflection.reflect(
             self.npc,
             world,
             result,
+            reasoning=self.last_reasoning,
         )
+
+        self.last_reflection = reflection
+
+        return reflection
 
     def update(self, world):
         """

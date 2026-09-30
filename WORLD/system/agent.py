@@ -5,6 +5,8 @@ from WORLD.AI.perception import Perception
 from WORLD.AI.planner import Planner
 from WORLD.AI.replanner import Replanner
 from WORLD.AI.plan_executor import PlanExecutor
+from WORLD.AI.reasoner import Reasoner
+from WORLD.AI.reflection import Reflection
 
 
 class AgentSystem:
@@ -24,6 +26,8 @@ class AgentSystem:
         replanner=None,
         memory_retriever=None,
         plan_executor=None,
+        reasoner=None,
+        reflection=None,
     ):
         self.decision_system = decision_system
 
@@ -61,6 +65,18 @@ class AgentSystem:
         )
 
         self.plan_executor = plan_executor
+        self.reasoner = (
+            reasoner
+            if reasoner is not None
+            else Reasoner(
+                decision_system=self.decision_system,
+            )
+        )
+        self.reflection = (
+            reflection
+            if reflection is not None
+            else Reflection()
+        )
 
     def _ensure_brain(self, npc):
         """
@@ -80,6 +96,8 @@ class AgentSystem:
                 decision_system=self.decision_system,
                 action_executor=None,
                 plan_executor=self.plan_executor,
+                reasoner=self.reasoner,
+                reflection=self.reflection,
             )
 
         return npc.brain

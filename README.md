@@ -740,3 +740,31 @@ Tests: 271 passed
 
 Phase 6 keeps Python deterministic and reality-authoritative while giving NPCs persistent internal state and multi-step behavior.
 
+## Phase 7 — NPC Architecture
+
+Phase 7 is complete: 300 tests passing. No production-code changes were needed for the 7.9 architectural regression suite.
+
+The NPC cognition lifecycle is owned by `Brain`, rather than `AgentSystem`:
+
+```text
+World
+   ↓
+AgentSystem
+   ↓
+NPC.brain.update()
+   ↓
+observe
+   ↓
+think
+   ↓
+plan
+   ↓
+reason
+   ↓
+act
+   ↓
+reflect
+```
+
+Personality is persistent NPC state.
+
