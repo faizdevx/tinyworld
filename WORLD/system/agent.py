@@ -1,5 +1,8 @@
 from WORLD.AI.brain import Brain
+from WORLD.AI.experience_influence import ExperienceInfluence
+from WORLD.AI.experience_reflection import ExperienceReflector
 from WORLD.AI.goal_system import GoalSystem
+from WORLD.AI.knowledge_extractor import KnowledgeExtractor
 from WORLD.AI.memory_retrieval import MemoryRetriever
 from WORLD.AI.perception import Perception
 from WORLD.AI.planner import Planner
@@ -7,7 +10,7 @@ from WORLD.AI.replanner import Replanner
 from WORLD.AI.plan_executor import PlanExecutor
 from WORLD.AI.reasoner import Reasoner
 from WORLD.AI.reflection import Reflection
-from WORLD.AI.experience_reflection import ExperienceReflector
+from WORLD.AI.reflection_scheduler import ReflectionScheduler
 
 
 class AgentSystem:
@@ -30,6 +33,9 @@ class AgentSystem:
         reasoner=None,
         reflection=None,
         experience_reflector=None,
+        knowledge_extractor=None,
+        reflection_scheduler=None,
+        experience_influence=None,
     ):
         self.decision_system = decision_system
 
@@ -84,6 +90,21 @@ class AgentSystem:
             if experience_reflector is not None
             else ExperienceReflector()
         )
+        self.knowledge_extractor = (
+            knowledge_extractor
+            if knowledge_extractor is not None
+            else KnowledgeExtractor()
+        )
+        self.reflection_scheduler = (
+            reflection_scheduler
+            if reflection_scheduler is not None
+            else ReflectionScheduler()
+        )
+        self.experience_influence = (
+            experience_influence
+            if experience_influence is not None
+            else ExperienceInfluence()
+        )
 
     def _ensure_brain(self, npc):
         """
@@ -108,6 +129,9 @@ class AgentSystem:
                 experience_reflector=(
                     self.experience_reflector
                 ),
+                knowledge_extractor=self.knowledge_extractor,
+                reflection_scheduler=self.reflection_scheduler,
+                experience_influence=self.experience_influence,
             )
 
         return npc.brain

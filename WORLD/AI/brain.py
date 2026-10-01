@@ -1,5 +1,10 @@
+from WORLD.AI.experience_influence import ExperienceInfluence
+from WORLD.AI.knowledge import KnowledgeBase
+from WORLD.AI.knowledge_extractor import KnowledgeExtractor
 from WORLD.AI.plan_executor import PlanExecutor
 from WORLD.AI.reasoner import Reasoner
+from WORLD.AI.reflection_scheduler import ReflectionScheduler
+from WORLD.AI.social_memory import SocialMemoryStore
 
 
 class Brain:
@@ -24,6 +29,9 @@ class Brain:
         reasoner=None,
         reflection=None,
         experience_reflector=None,
+        knowledge_extractor=None,
+        reflection_scheduler=None,
+        experience_influence=None,
     ):
         self.npc = npc
         self.perception = perception
@@ -41,6 +49,17 @@ class Brain:
         )
         self.reflection = reflection
         self.experience_reflector = experience_reflector
+        self.knowledge_extractor = (
+            knowledge_extractor
+            if knowledge_extractor is not None
+            else KnowledgeExtractor()
+        )
+        self.reflection_scheduler = (
+            reflection_scheduler
+            if reflection_scheduler is not None
+            else ReflectionScheduler()
+        )
+        self.experience_influence = experience_influence
         self.last_reasoning = None
         self.last_reflection = None
         self.last_experience_reflection = None
@@ -256,6 +275,80 @@ class Brain:
         self.last_experience_reflection = reflection
 
         return reflection
+
+    def learn_from_reflection(self, reflection):
+        if reflection is None:
+            return None
+
+        knowledge = self.knowledge_extractor.extract(
+            self.npc,
+            reflection,
+        )
+
+        if knowledge is None:
+            return None
+
+        if not hasattr(self.npc, "knowledge"):
+            self.npc.knowledge = KnowledgeBase()
+
+        stored = self.npc.knowledge.add(
+            subject=knowledge.subject,
+            predicate=knowledge.predicate,
+            value=knowledge.value,
+            confidence=knowledge.confidence,
+        )
+
+        return stored
+
+    def should_reflect_on_memory(self, memory):
+        if self.reflection_scheduler is None:
+            return False
+
+        decision = self.reflection_scheduler.should_reflect(memory)
+        return decision.should_reflect
+
+    def scheduled_reflect(self, memory, current_goal=None):
+        if self.reflection_scheduler is None:
+            return None
+
+        decision = self.reflection_scheduler.should_reflect(memory)
+        if not decision.should_reflect:
+            return None
+
+        return self.reflect_on_memory(memory, current_goal=current_goal)
+
+    def get_knowledge_about(self, person: str):
+        if not hasattr(self.npc, "knowledge"):
+            self.npc.knowledge = KnowledgeBase()
+        return self.npc.knowledge.for_subject(person)
+
+    def experience_influences(self, person: str):
+        if self.experience_influence is None:
+            return []
+        knowledge = self.get_knowledge_about(person)
+        return self.experience_influence.influence(
+            knowledge,
+            target=person,
+        )
+
+    def retrieve_social_context(self, person: str, *, memory_limit: int = 5):
+        if not hasattr(self.npc, "social_memory"):
+            self.npc.social_memory = SocialMemoryStore()
+        if not hasattr(self.npc, "knowledge"):
+            self.npc.knowledge = KnowledgeBase()
+
+        memories = self.npc.social_memory.for_person(
+            person,
+            limit=memory_limit,
+        )
+        knowledge = self.npc.knowledge.for_subject(person)
+
+        return {
+            "person": person,
+            "memories": memories,
+            "knowledge": knowledge,
+            "relationship": getattr(self.npc, "relationships", {}).get(person),
+        }
 
     def update(self, world):
         """

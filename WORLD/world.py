@@ -103,6 +103,15 @@ class World:
             experience_reflector=(
                 self.agent_system.experience_reflector
             ),
+            knowledge_extractor=(
+                self.agent_system.knowledge_extractor
+            ),
+            reflection_scheduler=(
+                self.agent_system.reflection_scheduler
+            ),
+            experience_influence=(
+                self.agent_system.experience_influence
+            ),
         )
 
         self.npcs.append(npc)

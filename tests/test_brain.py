@@ -365,3 +365,76 @@ def test_brain_does_not_reflect_on_unimportant_memory():
 
     assert reflection is None
     assert brain.last_experience_reflection is None
+
+
+def test_brain_can_learn_knowledge_from_experience_reflection():
+    from WORLD.AI.knowledge import KnowledgeBase
+    from WORLD.AI.knowledge_extractor import KnowledgeExtractor
+
+    npc = SimpleNamespace(
+        name="Rahul",
+        knowledge=KnowledgeBase(),
+    )
+
+    brain = Brain(
+        npc=npc,
+        perception=None,
+        goal_system=None,
+        planner=None,
+        replanner=None,
+        memory_retriever=None,
+        decision_system=None,
+        action_executor=None,
+        experience_reflector=ExperienceReflector(),
+        knowledge_extractor=KnowledgeExtractor(),
+    )
+
+    memory = Memory(
+        day=1,
+        hour=10,
+        event="Ali helped Rahul",
+        importance=0.9,
+        participants=["Rahul", "Ali"],
+    )
+    reflection = brain.reflect_on_memory(memory)
+
+    assert reflection is not None
+    assert brain.learn_from_reflection(reflection) is not None
+    assert len(npc.knowledge.entries) == 1
+    assert npc.knowledge.entries[0].subject == "Ali"
+    assert npc.knowledge.entries[0].predicate == "provides_help"
+
+
+def test_brain_does_not_learn_from_uninformative_reflection():
+    from WORLD.AI.knowledge import KnowledgeBase
+    from WORLD.AI.knowledge_extractor import KnowledgeExtractor
+
+    npc = SimpleNamespace(
+        name="Rahul",
+        knowledge=KnowledgeBase(),
+    )
+
+    brain = Brain(
+        npc=npc,
+        perception=None,
+        goal_system=None,
+        planner=None,
+        replanner=None,
+        memory_retriever=None,
+        decision_system=None,
+        action_executor=None,
+        experience_reflector=ExperienceReflector(),
+        knowledge_extractor=KnowledgeExtractor(),
+    )
+
+    memory = Memory(
+        day=1,
+        hour=10,
+        event="Walked to the farm",
+        importance=0.8,
+    )
+    reflection = brain.reflect_on_memory(memory)
+
+    assert reflection is None
+    assert brain.learn_from_reflection(reflection) is None
+    assert len(npc.knowledge.entries) == 0

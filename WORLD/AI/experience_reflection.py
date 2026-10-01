@@ -40,6 +40,13 @@ class ExperienceReflector:
         if memory.importance < self.REFLECTION_THRESHOLD:
             return None
 
+        event = memory.event.lower()
+        if (
+            current_goal is None
+            and not self._is_informative_event(event)
+        ):
+            return None
+
         observation = memory.event.strip()
 
         interpretation = self._interpret(
@@ -64,6 +71,33 @@ class ExperienceReflector:
             lesson=lesson,
             suggested_behavior=suggested_behavior,
         )
+
+    def _is_informative_event(self, event: str) -> bool:
+        informative_markers = (
+            "helped",
+            "gave",
+            "refused",
+            "rejected",
+            "failed",
+            "borrowed",
+            "lent",
+            "money",
+            "credit",
+            "food",
+            "bought",
+            "sold",
+            "stole",
+            "asked",
+            "apologized",
+            "argued",
+            "fought",
+            "ignored",
+            "supported",
+            "disagreed",
+            "demanded",
+        )
+
+        return any(marker in event for marker in informative_markers)
 
     def _interpret(
         self,

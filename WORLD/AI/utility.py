@@ -21,6 +21,39 @@ class UtilitySystem:
             * npc.personality.sociability
         )
 
+    def experience_social_modifier(
+        self,
+        knowledge,
+        target,
+    ) -> int:
+        modifier = 0
+        for fact in knowledge:
+            if fact.subject != target:
+                continue
+            if fact.predicate != "provides_help":
+                continue
+            if fact.value is True:
+                modifier += 20
+            elif fact.value is False:
+                modifier -= 20
+        return modifier
+
+    def score_socialize_with_experience(
+        self,
+        npc,
+        context: UtilityContext,
+        target: str,
+    ) -> float:
+        score = self.score_socialize(npc, context)
+        knowledge = getattr(npc, "knowledge", None)
+        if knowledge is None:
+            return score
+        score += self.experience_social_modifier(
+            knowledge.for_subject(target),
+            target,
+        )
+        return score
+
     def score_work(self, npc, context: UtilityContext) -> float:
         return (
             context.money_need

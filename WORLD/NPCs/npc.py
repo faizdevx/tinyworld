@@ -2,7 +2,9 @@ from dataclasses import dataclass, field
 from typing import ClassVar, Optional
 
 from WORLD.AI.brain import Brain
+from WORLD.AI.knowledge import KnowledgeBase
 from WORLD.AI.personality import Personality
+from WORLD.AI.social_memory import SocialMemoryStore
 from WORLD.Map.position import Position
 from WORLD.NPCs.memory import Memory
 from WORLD.NPCs.relationship import Relationship
@@ -22,6 +24,10 @@ class NPC:
     schedule: dict[int, str] = field(default_factory=dict)
     relationships: dict[str, Relationship] = field(default_factory=dict)
     memories: list[Memory] = field(default_factory=list)
+    knowledge: KnowledgeBase = field(default_factory=KnowledgeBase)
+    social_memory: SocialMemoryStore = field(
+        default_factory=SocialMemoryStore,
+    )
     personality: Personality = field(
         default_factory=Personality,
     )
@@ -206,6 +212,13 @@ class NPC:
 
     def remember(self, memory: Memory) -> None:
         self.memories.append(memory)
+        self.social_memory.record(self, memory)
 
         if len(self.memories) > self.MAX_MEMORIES:
             self.memories.pop(0)
+            self._rebuild_social_memory()
+
+    def _rebuild_social_memory(self) -> None:
+        self.social_memory = SocialMemoryStore()
+        for memory in self.memories:
+            self.social_memory.record(self, memory)
