@@ -47,6 +47,16 @@ class SocialSystem:
         world,
     ) -> None:
 
+        event_engine = getattr(world, "event_engine", None)
+        if event_engine is not None:
+            event_engine.process_npc_action(
+                world,
+                npc_a,
+                ActionType.SOCIALIZE,
+                npc_b,
+            )
+            return
+
         npc_a.change_relationship(
             npc_b,
             1,

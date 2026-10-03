@@ -1,4 +1,5 @@
 from WORLD.Events.event import WorldEvent
+from WORLD.Events.event import EventProposal, EventSource
 from WORLD.NPCs.memory import Memory
 
 
@@ -86,6 +87,24 @@ class ConflictSystem:
         - lowers both reputations
         - creates a world event
         """
+
+        event_engine = getattr(world, "event_engine", None)
+        if event_engine is not None:
+            event_engine.process(
+                world,
+                EventProposal(
+                    actor="system:conflict",
+                    action_type="conflict",
+                    target=f"npc:{npc_b.name}",
+                    properties={
+                        "first": npc_a.name,
+                        "second": npc_b.name,
+                    },
+                    source=EventSource.SYSTEM,
+                    timestamp=(world.clock.day, world.clock.hour),
+                ),
+            )
+            return
 
         # Relationships.
         npc_a.change_relationship(

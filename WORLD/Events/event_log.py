@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from WORLD.Events.event import WorldEvent
 
 
@@ -10,6 +12,9 @@ class EventLog:
         self.events: list[WorldEvent] = []
 
     def add(self, event: WorldEvent) -> None:
+        next_sequence = len(self.events) + 1
+        if event.sequence != next_sequence:
+            event = replace(event, sequence=next_sequence)
         self.events.append(event)
 
     def recent(self, limit: int = 20) -> list[WorldEvent]:

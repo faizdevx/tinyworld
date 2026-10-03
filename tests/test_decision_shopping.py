@@ -20,6 +20,7 @@ def test_simulation_uses_decision_to_trigger_shopping():
     world.add_npc(rahul)
 
     world.clock.hour = 10
+    rahul.schedule[10] = world.shop.name
 
     simulation = Simulation(world)
     simulation.tick()

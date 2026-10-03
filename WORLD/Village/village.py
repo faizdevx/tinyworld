@@ -64,7 +64,7 @@ class Village:
                 16: "Village Farm",
                 17: "Village Farm",
                 18: "House 1",
-                19: "House 1",
+                19: "General Store",
                 20: "House 1",
                 21: "House 1",
             },
@@ -87,6 +87,7 @@ class Village:
                 15: "Village Farm",
                 16: "Village Farm",
                 17: "Village Farm",
+                19: "General Store",
             },
         )
 
@@ -108,6 +109,7 @@ class Village:
                 16: "General Store",
                 17: "General Store",
                 18: "House 2",
+                19: "House 2",
             },
         )
 
@@ -128,8 +130,13 @@ class Village:
                 15: "Village Farm",
                 16: "Village Farm",
                 17: "Village Farm",
+                19: "General Store",
             },
         )
+
+        for npc in (rahul, arjun, sara):
+            for hour in (*range(0, 6), *range(19, 24)):
+                npc.schedule.setdefault(hour, "General Store")
 
         world.add_npc(rahul)
         world.add_npc(arjun)

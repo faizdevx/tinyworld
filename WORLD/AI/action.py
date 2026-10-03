@@ -38,6 +38,14 @@ class BuyFoodAction(Action):
         )
 
     def execute(self, npc, world) -> bool:
+        event_engine = getattr(world, "event_engine", None)
+        if event_engine is not None:
+            return event_engine.process_npc_action(
+                world,
+                npc,
+                ActionType.SHOP,
+            ).success
+
         if not self.can_execute(npc, world):
             return False
 

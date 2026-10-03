@@ -15,14 +15,21 @@ from WORLD.AI.decision import DecisionSystem
 from WORLD.AI.action_executor import ActionExecutor
 from WORLD.AI.brain import Brain
 from WORLD.AI.plan_executor import PlanExecutor
+from WORLD.AI.observation import ObservationSystem
+from WORLD.AI.perception import Perception
 from WORLD.system.agent import AgentSystem
 from WORLD.Events.event_log import EventLog
+from WORLD.Events.engine import EventEngine
 from WORLD.Economy.pricing import PricingSystem
 from WORLD.Cooperation.cooperation import CooperationSystem
 from WORLD.Conflict.conflict import ConflictSystem
 from WORLD.Social.reputation import ReputationSystem
 from WORLD.Simulation.rng import SimulationRNG
 from WORLD.Environment.environment import EnvironmentSystem
+from WORLD.Entities.entity import WorldEntity
+from WORLD.Factions.faction import Faction
+from WORLD.Interventions.engine import InterventionEngine
+from WORLD.Interventions.models import InterventionAudit
 
 
 class World:
@@ -38,6 +45,13 @@ class World:
         # -------------------------
         self.npcs: list[NPC] = []
         self.buildings: list[Building] = []
+        self.entities: list[WorldEntity] = []
+        self.factions: list[Faction] = []
+        self.metadata: dict[str, str] = {}
+        self.rules: dict[str, object] = {}
+        self.intervention_history: list[InterventionAudit] = []
+        self.intervention_engine = InterventionEngine()
+        self.observation_system = ObservationSystem()
 
         # -------------------------
         # Resources
@@ -46,6 +60,9 @@ class World:
             name="Food",
             quantity=100,
         )
+        self.resources: dict[str, Resource] = {
+            "Food": self.food,
+        }
 
         # -------------------------
         # Shop
@@ -72,9 +89,11 @@ class World:
         self.action_executor = ActionExecutor()
         self.pricing_system = PricingSystem()
         self.agent_system = AgentSystem(
-            self.decision_system
+            self.decision_system,
+            perception=Perception(self.observation_system),
             )
         self.event_log = EventLog()
+        self.event_engine = EventEngine()
         self.conflict_system = ConflictSystem()
         self.cooperation_system = CooperationSystem()
         self.reputation_system = ReputationSystem()
@@ -118,3 +137,9 @@ class World:
 
     def add_building(self, building: Building) -> None:
         self.buildings.append(building)
+
+    def add_entity(self, entity: WorldEntity) -> None:
+        self.entities.append(entity)
+
+    def add_faction(self, faction: Faction) -> None:
+        self.factions.append(faction)

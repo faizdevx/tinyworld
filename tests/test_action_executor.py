@@ -63,6 +63,7 @@ def test_shop_action_buys_food():
 
     rahul.money = 50
     rahul.food = 0
+    rahul.move_to(world.shop.name)
 
     success = ActionExecutor().execute(
         rahul,
@@ -75,6 +76,27 @@ def test_shop_action_buys_food():
     assert rahul.food == 1
     assert world.shop.food == 19
     assert world.shop.money == 105
+
+
+def test_shop_action_rejects_npc_outside_shop_without_moving_them():
+    world = World()
+    rahul = create_npc()
+    world.add_npc(rahul)
+    starting_money = rahul.money
+    starting_food = world.shop.food
+    starting_shop_money = world.shop.money
+
+    success = ActionExecutor().execute(
+        rahul,
+        ActionType.SHOP,
+        world,
+    )
+
+    assert success is False
+    assert rahul.location == "House 1"
+    assert rahul.money == starting_money
+    assert world.shop.food == starting_food
+    assert world.shop.money == starting_shop_money
 
 def test_sleep_from_work_moves_npc_home():
     world = World()

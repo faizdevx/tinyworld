@@ -1,6 +1,8 @@
 from WORLD.world import World
 from WORLD.NPCs.npc import NPC
 from WORLD.Buildings.buildings import Building
+from WORLD.Entities.entity import WorldEntity
+from WORLD.Factions.faction import Faction
 
 
 def test_world_creation():
@@ -9,9 +11,12 @@ def test_world_creation():
     assert world.clock is not None
     assert world.npcs == []
     assert world.buildings == []
+    assert world.entities == []
+    assert world.factions == []
 
     assert world.food.name == "Food"
     assert world.food.quantity == 100
+    assert world.resources["Food"] is world.food
 
     assert world.shop.name == "General Store"
     assert world.shop.money == 100
@@ -51,3 +56,22 @@ def test_world_can_add_building():
 
     assert len(world.buildings) == 1
     assert world.buildings[0] is farm
+
+
+def test_world_can_add_entity():
+    world = World()
+    entity = WorldEntity(name="River", entity_type="river")
+
+    world.add_entity(entity)
+
+    assert world.entities == [entity]
+
+
+def test_world_can_add_faction():
+    world = World()
+    faction = Faction(name="Regional Ruler", faction_type="ruler")
+
+    world.add_faction(faction)
+
+    assert world.factions == [faction]
+    assert world.factions[0] is faction

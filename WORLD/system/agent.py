@@ -5,6 +5,7 @@ from WORLD.AI.goal_system import GoalSystem
 from WORLD.AI.knowledge_extractor import KnowledgeExtractor
 from WORLD.AI.memory_retrieval import MemoryRetriever
 from WORLD.AI.perception import Perception
+from WORLD.AI.observation import ObservationSystem
 from WORLD.AI.planner import Planner
 from WORLD.AI.replanner import Replanner
 from WORLD.AI.plan_executor import PlanExecutor
@@ -42,7 +43,7 @@ class AgentSystem:
         self.perception = (
             perception
             if perception is not None
-            else Perception()
+            else Perception(ObservationSystem())
         )
 
         self.goal_system = (

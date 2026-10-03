@@ -73,18 +73,37 @@ class Brain:
             world,
         )
 
+        self.npc.observations = tuple(
+            getattr(
+                self.perception,
+                "last_observations",
+                (),
+            )
+        )
+
         self.npc.beliefs = observations
 
         return observations
+
+    def _cognition_world(self, world):
+        observation_system = getattr(
+            self.perception,
+            "observation_system",
+            None,
+        )
+        if observation_system is None:
+            return world
+        return observation_system.cognition_view(world, self.npc)
 
     def think(self, world):
         """
         Evaluate immediate needs and persistent goals,
         then retrieve memories relevant to the selected goal.
         """
+        cognition_world = self._cognition_world(world)
         immediate_goals = self.goal_system.evaluate_goals(
             self.npc,
-            world,
+            cognition_world,
         )
 
         long_term_goals = [
@@ -99,7 +118,7 @@ class Brain:
 
         selected_goal = self.goal_system.select_highest_priority(
             goals,
-            world.clock.day,
+            cognition_world.clock.day,
         )
 
         self.npc.current_goal = selected_goal
@@ -206,7 +225,7 @@ class Brain:
 
         reasoning = self.reasoner.reason(
             self.npc,
-            world,
+            self._cognition_world(world),
             had_active_plan=had_active_plan,
             current_goal=getattr(
                 self.npc,

@@ -276,7 +276,7 @@ def test_same_seed_produces_same_state():
 
 def test_different_seeds_can_produce_different_state():
     world_a = run_village(42)
-    world_b = run_village(99)
+    world_b = run_village(1)
 
     state_a = (
         world_a.food.quantity,

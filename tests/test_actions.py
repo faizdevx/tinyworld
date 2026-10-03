@@ -75,3 +75,5 @@ def test_buy_food_changes_world_state():
     assert rahul.food == 1
     assert world.shop.food == 4
     assert world.shop.money == 105
+    assert len(world.event_log.events) == 1
+    assert world.event_log.events[0].event_type == "PURCHASE"

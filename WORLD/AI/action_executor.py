@@ -22,6 +22,15 @@ class ActionExecutor:
         target=None,
     ) -> bool:
 
+        event_engine = getattr(world, "event_engine", None)
+        if event_engine is not None:
+            return event_engine.process_npc_action(
+                world,
+                npc,
+                action,
+                target,
+            ).success
+
         if action == ActionType.EAT:
             success = npc.eat()
 

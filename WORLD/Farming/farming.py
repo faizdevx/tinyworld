@@ -1,4 +1,5 @@
 from WORLD.Events.event import WorldEvent
+from WORLD.Events.event import EventProposal, EventSource
 from WORLD.Work.work import WorkStatus
 
 
@@ -69,6 +70,21 @@ class FarmingSystem:
             )
         # No production means no harvest event.
         if production == 0:
+            return
+
+        event_engine = getattr(world, "event_engine", None)
+        if event_engine is not None:
+            event_engine.process(
+                world,
+                EventProposal(
+                    actor="system:farming",
+                    action_type="harvest",
+                    target="resource:Food",
+                    properties={"quantity": production},
+                    source=EventSource.SYSTEM,
+                    timestamp=(world.clock.day, world.clock.hour),
+                ),
+            )
             return
 
         world.food.add(production)

@@ -12,6 +12,7 @@ def test_social_state_persists_across_days():
         money=50,
         home="House 1",
         location="House 1",
+        food=20,
     )
 
     ali = NPC(
@@ -20,6 +21,7 @@ def test_social_state_persists_across_days():
         money=50,
         home="House 2",
         location="House 1",
+        food=20,
     )
 
     world.add_npc(rahul)

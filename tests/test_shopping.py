@@ -30,6 +30,7 @@ def test_hungry_npc_buys_food():
     world = World()
 
     rahul = create_npc()
+    rahul.move_to(world.shop.name)
 
     world.add_npc(rahul)
 
@@ -49,6 +50,7 @@ def test_hungry_npc_can_shop_at_19():
     world = World()
 
     rahul = create_npc()
+    rahul.move_to(world.shop.name)
 
     world.add_npc(rahul)
 
@@ -129,6 +131,7 @@ def test_shopping_can_be_followed_by_eating():
         energy=50,
         food=0,
     )
+    rahul.move_to(world.shop.name)
 
     world.add_npc(rahul)
 

@@ -1,4 +1,5 @@
 from WORLD.Events.event import WorldEvent
+from WORLD.Events.event import EventProposal, EventSource
 
 
 class RestockingSystem:
@@ -10,6 +11,21 @@ class RestockingSystem:
             return
 
         if world.food.quantity < self.RESTOCK_AMOUNT:
+            return
+
+        event_engine = getattr(world, "event_engine", None)
+        if event_engine is not None:
+            event_engine.process(
+                world,
+                EventProposal(
+                    actor="system:restocking",
+                    action_type="restock",
+                    target="resource:Food",
+                    properties={"quantity": self.RESTOCK_AMOUNT},
+                    source=EventSource.SYSTEM,
+                    timestamp=(world.clock.day, world.clock.hour),
+                ),
+            )
             return
 
         success = world.food.consume(

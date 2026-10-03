@@ -1,4 +1,5 @@
 from WORLD.Events.event import WorldEvent
+from WORLD.Events.event import EventProposal, EventSource
 from WORLD.NPCs.memory import Memory
 
 
@@ -69,6 +70,24 @@ class CooperationSystem:
                 continue
 
             donor = donors[0]
+
+            event_engine = getattr(world, "event_engine", None)
+            if event_engine is not None:
+                event_engine.process(
+                    world,
+                    EventProposal(
+                        actor="system:cooperation",
+                        action_type="food_gift",
+                        target=f"npc:{receiver.name}",
+                        properties={
+                            "donor": donor.name,
+                            "receiver": receiver.name,
+                        },
+                        source=EventSource.SYSTEM,
+                        timestamp=(world.clock.day, world.clock.hour),
+                    ),
+                )
+                continue
 
             if not self._transfer_food(donor, receiver):
                 continue

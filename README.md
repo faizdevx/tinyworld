@@ -13,7 +13,7 @@ using simple, testable systems.
 ![Pytest](https://img.shields.io/badge/Tested%20with-Pytest-green?style=flat-square)
 ![Dataclasses](https://img.shields.io/badge/Stdlib-Dataclasses-blueviolet?style=flat-square)
 ![Typing](https://img.shields.io/badge/Stdlib-Typing-blueviolet?style=flat-square)
-![Phase](https://img.shields.io/badge/Phase-1-orange?style=flat-square)
+![Phase](https://img.shields.io/badge/Phase-12-orange?style=flat-square)
 
 <br><br>
 
@@ -23,6 +23,10 @@ using simple, testable systems.
 <br><br>
 
 [Architecture](#architecture) ·
+[Genesis](#phase-9--genesis) ·
+[Interventions](#phase-10--god-intervention-engine) ·
+[Private Reality](#phase-11--private-reality) ·
+[Causality](#phase-12--world-event--causality-engine) ·
 [Simulation](#simulation-loop) ·
 [Project Structure](#project-structure) ·
 [Run](#running-tinyworld) ·
@@ -374,7 +378,11 @@ tinyworld/
 │   ├── Buildings/
 │   ├── Clock/
 │   ├── Economy/
+│   ├── Entities/
 │   ├── Farming/
+│   ├── Factions/
+│   ├── Genesis/
+│   ├── Interventions/
 │   ├── Map/
 │   ├── Needs/
 │   ├── NPCs/
@@ -767,4 +775,319 @@ reflect
 ```
 
 Personality is persistent NPC state.
+
+## Phase 9 — Genesis ✅
+
+Phase 9 establishes the boundary between declarative world creation and the
+simulation that evolves the resulting world.
+
+```text
+                                     GOD
+                                       │
+                                       ▼
+                            WorldScenario
+                                       │
+                                       ▼
+                            WorldGenerator
+                                       │
+            ┌─────────────────┼─────────────────┐
+            ▼                 ▼                 ▼
+      Resources         Buildings          Entities
+            │                 │                 │
+            └─────────────────┼─────────────────┘
+                                       │
+                   ┌────────────┼────────────┐
+                   ▼            ▼            ▼
+             Factions       NPCs        Metadata
+                                       │
+                                       ▼
+                                    Brain
+                                       │
+                                       ▼
+                               Simulation
+                                       │
+                                       ▼
+                                 World State
+```
+
+### Phase 9 progression
+
+```text
+9.1  WorldScenario                  ✓
+9.2  Scenario validation            ✓
+9.3  WorldGenerator                 ✓
+9.4  Generic resource generation    ✓
+9.5  Building generation            ✓
+9.6  NPC population generation      ✓
+9.7  Geography / world entities     ✓
+9.8  Factions                       ✓
+9.9  Scenario-driven World creation ✓
+9.10 Multiple scenario regression   ✓
+```
+
+`WorldScenario` describes the initial world. `WorldGenerator` constructs
+resources, buildings, entities, factions, metadata, and NPCs. Generated NPCs
+use the existing `World.add_npc()` path, so their brains are initialized by the
+same architecture as NPCs added to a normal world.
+
+The generator supports generic data with small deterministic vocabularies and
+falls back to `generic` for unknown buildings, entities, and factions. Genesis
+creates initial state; it does not introduce geography mechanics, faction
+politics, or scenario-specific simulation branches.
+
+### Genesis contract
+
+Three substantially different scenarios are generated through the same
+`WorldGenerator`:
+
+```text
+Coastal settlement ─┐
+Mountain settlement ├──→ different generated worlds
+Trading settlement  ┘
+```
+
+The tested properties are:
+
+```text
+same scenario + same seed → same structural world
+different scenario        → different structural world
+generated World            → accepted by the existing Simulation
+World()                   → remains the default construction path
+```
+
+The final Phase 9 regression suite reports **405 passing tests**, including
+three scenario configurations, one shared generator, deterministic
+regeneration, simulation-compatible generated worlds, and plain `World()`
+compatibility.
+
+The architectural rule is:
+
+> **God defines. Genesis constructs. Simulation evolves.**
+
+## Phase 10 — God Intervention Engine
+
+Phase 10 adds a generic, deterministic boundary for changing the world while
+the simulation is running.
+
+```text
+God command
+   ↓
+GodIntervention
+   ↓
+InterventionEngine
+   ↓
+World state mutation
+   ↓
+Normal simulation
+   ↓
+NPC perception and cognition
+```
+
+Interventions use explicit target namespaces such as:
+
+```text
+resource:Food
+npc:Rahul
+building:General Store
+entity:Forest
+faction:Regional Ruler
+world:metadata.climate
+```
+
+The engine supports the core operations:
+
+```text
+CREATE              UPDATE              REMOVE
+MOVE                SPAWN               DESPAWN
+TRIGGER_EVENT       CHANGE_ENVIRONMENT  CHANGE_RESOURCE
+CHANGE_RULE         ADVANCE_TIME
+```
+
+The `GodIntervention` command is immutable and produces a structured
+`InterventionResult`. Failed operations do not partially mutate the world.
+Interventions are recorded in a God-side audit history, separate from normal
+world events and NPC memories.
+
+For example:
+
+```python
+result = world.intervention_engine.apply(
+   world,
+   GodIntervention(
+      operation="change_resource",
+      target="resource:Food",
+      value=-95,
+      visibility="god_only",
+   ),
+)
+```
+
+Food changes use the existing `Resource.add()` and `Resource.consume()` APIs,
+so `world.resources["Food"] is world.food` remains true. Spawned NPCs use
+`World.add_npc()` and receive normal Brain initialization. Events and
+environment changes reuse the existing event log and environment system.
+
+The central observation boundary is:
+
+```text
+God changes reality.
+NPCs experience reality.
+Simulation determines consequences.
+```
+
+God-only interventions do not inject commands, provenance, old values, or
+explanations into NPC memory, beliefs, or knowledge. NPCs can learn only from
+observable consequences through the normal simulation pipeline.
+
+Phase 10 is covered by **427 passing tests**, including resource atomicity,
+controlled target resolution, generic creation and removal, NPC movement and
+spawning, event and environment integration, rule safety, time advancement,
+audit logging, determinism, visibility separation, and full Phase 1-9
+regression coverage.
+
+## Phase 11 — Private Reality
+
+Phase 11 separates authoritative World truth from NPC-specific information.
+The `ObservationSystem` is the firewall between the two:
+
+```text
+World Truth
+   ↓
+ObservationSystem
+   ↓
+NPC-specific Observation snapshots
+   ↓
+Brain / Perception
+   ↓
+Beliefs, Memory, and Knowledge
+```
+
+Observations are immutable value objects. They contain filtered facts rather
+than live World references, and are generated separately for each NPC. The
+current deterministic policy supports:
+
+- location-based visibility
+- symbolic location distance
+- separate visual and auditory channels
+- a lightweight line-of-sight boundary
+- deterministic attention limits
+- lossy information such as `perceived_size` instead of hidden exact values
+
+For example, an army with a true size of `500` in the Forest can be visible to
+an NPC in the Forest, audible from a nearby Road, and unavailable to an NPC in
+a distant Settlement. The nearby observation can report a `large` group without
+revealing the exact army size.
+
+The Phase 10 intervention audit remains God-side information. It is not an
+observation source and is never copied into NPC memory, beliefs, or knowledge.
+World events are also filtered by location rather than delivered to every NPC.
+
+The architectural distinction is:
+
+```text
+World truth       = authoritative reality
+Observation       = filtered snapshot
+Belief            = interpreted internal state
+Memory            = retained experience
+Knowledge         = accumulated NPC-specific information
+God audit         = private intervention history
+```
+
+Phase 11 preserves the existing Brain lifecycle, `World()`, Genesis, Phase 10
+mutations, and normal simulation ticks. The private-reality regression suite
+now reports **441 passing tests**.
+
+## Phase 12 — World Event & Causality Engine
+
+Phase 12 separates an attempted action from an event that actually happened.
+NPC actions and selected God operations use the shared event pipeline:
+
+```text
+Intent
+   ↓
+EventProposal
+   ↓
+EventValidator
+   ↓
+EventResolver
+   ↓
+WorldEvent
+   ↓
+ConsequenceEngine
+   ↓
+Authoritative World state
+   ↓
+ObservationSystem
+```
+
+`EventProposal` is immutable and does not mutate the World. Validation checks
+current authoritative state without changing it. A valid proposal resolves to
+a structured, immutable `WorldEvent`; the consequence engine applies the
+validated changes, and the existing `EventLog` records the result in
+deterministic sequence order. Rejected proposals do not create successful
+WorldEvents or partially apply their consequences.
+
+### NPC purchase
+
+An NPC's `SHOP` or planner-generated `OBTAIN_FOOD` intent becomes a purchase
+proposal. The validator checks that the NPC is at the shop, stock and quantity
+are valid, and the NPC can pay. On success, one `PURCHASE` event records the
+item, quantity, and price, then money and Food inventories change together.
+
+```text
+Rahul at General Store, money 20
+shop Food 10, price 5
+            ↓
+PURCHASE proposal
+            ↓
+validation succeeds
+            ↓
+Rahul money 15; Rahul Food +1
+shop money +5; shop Food -1
+            ↓
+PURCHASE WorldEvent in EventLog
+```
+
+An off-site, unaffordable, empty-stock, or invalid-quantity purchase is
+rejected without teleporting Rahul or changing either inventory or balance.
+The Village schedules explicit store visits; physical location remains a
+precondition rather than an implicit side effect.
+
+### God intervention
+
+God spawn, despawn, move, resource-change, and event-trigger requests enter the
+same proposal/validation/resolution/consequence path. For example, spawning a
+foreign army creates a `SPAWN` WorldEvent and a generic `WorldEntity`; the
+`ObservationSystem` then independently filters whether each NPC can perceive
+it. The command is not broadcast to NPCs.
+
+```text
+GodIntervention: spawn entity:Foreign Army
+            ↓
+SPAWN WorldEvent
+            ↓
+Foreign Army enters World at Forest
+            ↓
+nearby NPC observation; distant NPC receives none
+```
+
+The WorldEvent is a record of world reality, not universal NPC knowledge.
+EventLog history is not copied into everyone’s memories. God intervention
+audit records remain separate from WorldEvent history, and observations contain
+filtered snapshots rather than intervention provenance or live entity
+references.
+
+Phase 12 uses synchronous deterministic processing and a monotonically assigned
+event sequence; no separate event bus, queue, or UUID identity system is
+introduced. NPC `EAT`, `SLEEP`, `WORK`, `SHOP`, `OBTAIN_FOOD`, and `SOCIALIZE`
+actions use the event pipeline. Farming, restocking, cooperation, and conflict
+retain their existing deterministic selection rules, but submit proposals so
+the event engine validates and applies their consequences before recording
+WorldEvents. Phase 10 metadata/rule/time operations retain their specialized
+handlers, while event-like God mutations use the causal pipeline.
+
+Phase 12 is covered by **457 passing tests** across proposal validation,
+purchase success and rejection, atomic consequences, God spawn/resource
+changes, deterministic event ordering, EventLog integration, observer
+filtering, and Phase 1-11 regression coverage.
 

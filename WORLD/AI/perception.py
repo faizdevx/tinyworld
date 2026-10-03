@@ -1,4 +1,5 @@
 from WORLD.AI.beliefs import Belief
+from WORLD.AI.observation import ObservationSystem
 
 
 class Perception:
@@ -9,7 +10,23 @@ class Perception:
     observations reflect reality directly.
     """
 
+    def __init__(self, observation_system=None):
+        self.observation_system = (
+            observation_system
+            if observation_system is not None
+            else ObservationSystem()
+        )
+        self.last_observations = []
+
+    def observe_world(self, npc, world):
+        self.last_observations = self.observation_system.observe(
+            world,
+            npc,
+        )
+        return list(self.last_observations)
+
     def observe(self, npc, world) -> list[Belief]:
+        self.observe_world(npc, world)
         beliefs = [
             Belief(
                 subject=npc.name,
@@ -36,5 +53,15 @@ class Perception:
                 confidence=1.0,
             ),
         ]
+
+        beliefs.extend(
+            Belief(
+                subject=observation.subject,
+                predicate="observation",
+                value=observation.description,
+                confidence=observation.confidence,
+            )
+            for observation in self.last_observations
+        )
 
         return beliefs
