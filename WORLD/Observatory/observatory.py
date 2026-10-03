@@ -23,15 +23,29 @@ def _freeze(value):
     return value
 
 
-def _json_safe(value):
+def _json_safe(value, _seen: set[int] | None = None):
+    if _seen is None:
+        _seen = set()
+
     if isinstance(value, Mapping):
-        return {str(key): _json_safe(item) for key, item in value.items()}
+        return {str(key): _json_safe(item, _seen) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_json_safe(item) for item in value]
+        return [_json_safe(item, _seen) for item in value]
     if isinstance(value, (set, frozenset)):
-        return [_json_safe(item) for item in sorted(value, key=lambda item: str(item))]
+        return [_json_safe(item, _seen) for item in sorted(value, key=lambda item: str(item))]
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        return _json_safe(value.to_dict(), _seen)
+    if isinstance(value, Enum):
+        return value.value
     if hasattr(value, "__dict__") and not isinstance(value, (str, int, float, bool, type(None))):
-        return _json_safe(vars(value))
+        obj_id = id(value)
+        if obj_id in _seen:
+            return f"<recursive:{type(value).__name__}>"
+        _seen.add(obj_id)
+        try:
+            return {str(key): _json_safe(item, _seen) for key, item in vars(value).items() if not key.startswith("_")}
+        finally:
+            _seen.remove(obj_id)
     return value
 
 

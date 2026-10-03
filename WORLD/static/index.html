@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TinyWorld God Observatory</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <div class="brand-title">TINYWORLD</div>
+          <div class="brand-subtitle">GOD OBSERVATORY</div>
+        </div>
+        <div class="topbar-stats" id="statusSummary"></div>
+      </header>
+
+      <div class="toolbar panel">
+        <button class="pixel-btn primary" data-action="start">START</button>
+        <button class="pixel-btn" data-action="pause">PAUSE</button>
+        <button class="pixel-btn" data-action="step">STEP</button>
+        <button class="pixel-btn danger" data-action="reset">RESET</button>
+        <button class="pixel-btn neutral" data-action="snapshot">CAPTURE SNAPSHOT</button>
+      </div>
+
+      <div class="main-layout">
+        <aside class="sidebar panel">
+          <div class="nav-group">
+            <button class="nav-btn active" data-section="world">World</button>
+            <button class="nav-btn" data-section="npcs">NPCs</button>
+            <button class="nav-btn" data-section="events">Events</button>
+            <button class="nav-btn" data-section="communications">Communications</button>
+            <button class="nav-btn" data-section="beliefs">Beliefs</button>
+            <button class="nav-btn" data-section="truth">Truth vs Belief</button>
+            <button class="nav-btn" data-section="interventions">Interventions</button>
+            <button class="nav-btn" data-section="metrics">Metrics</button>
+            <button class="nav-btn" data-section="snapshots">Snapshots</button>
+            <button class="nav-btn" data-section="checkpoints">Checkpoints</button>
+          </div>
+
+          <div class="panel compact panel-gold">
+            <h3>GOD CONTROL</h3>
+            <label>
+              Operation
+              <select id="interventionOperation">
+                <option value="spawn">spawn</option>
+                <option value="change_resource">change_resource</option>
+                <option value="trigger_event">trigger_event</option>
+                <option value="advance_time">advance_time</option>
+              </select>
+            </label>
+            <label>
+              Target
+              <input id="interventionTarget" value="entity:foreign_army" />
+            </label>
+            <label>
+              Value
+              <input id="interventionValue" value="500" />
+            </label>
+            <label>
+              Visibility
+              <select id="interventionVisibility">
+                <option value="god_only">god_only</option>
+                <option value="world">world</option>
+              </select>
+            </label>
+            <label>
+              Properties JSON
+              <textarea id="interventionProperties">{"location": "Northern Road", "size": 500}</textarea>
+            </label>
+            <div class="preset-row">
+              <button class="pixel-btn small" data-preset="spawn">Spawn Army</button>
+              <button class="pixel-btn small" data-preset="food">Reduce Food</button>
+            </div>
+            <button class="pixel-btn primary full" id="applyIntervention">APPLY</button>
+          </div>
+        </aside>
+
+        <main class="content">
+          <section class="panel world-panel" id="worldSection">
+            <div class="section-header">
+              <h2>World View</h2>
+            </div>
+            <div class="world-map" id="worldMap"></div>
+            <div id="worldSummary"></div>
+          </section>
+
+          <section class="panel hidden" id="npcsSection">
+            <div class="section-header"><h2>NPCs</h2></div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Name</th><th>Role</th><th>Location</th><th>Money</th><th>Goal</th><th>Action</th></tr>
+                </thead>
+                <tbody id="npcTableBody"></tbody>
+              </table>
+            </div>
+            <div id="npcDetail" class="npc-detail"></div>
+          </section>
+
+          <section class="panel hidden" id="eventsSection">
+            <div class="section-header"><h2>Recent Events</h2></div>
+            <div id="eventList"></div>
+          </section>
+
+          <section class="panel hidden" id="communicationsSection">
+            <div class="section-header"><h2>Communications</h2></div>
+            <div id="communicationList"></div>
+          </section>
+
+          <section class="panel hidden" id="beliefsSection">
+            <div class="section-header"><h2>Beliefs</h2></div>
+            <div id="beliefList"></div>
+          </section>
+
+          <section class="panel hidden" id="truthSection">
+            <div class="section-header"><h2>Truth vs Belief</h2></div>
+            <div id="truthTable"></div>
+          </section>
+
+          <section class="panel hidden" id="interventionsSection">
+            <div class="section-header"><h2>Interventions</h2></div>
+            <div id="interventionList"></div>
+          </section>
+
+          <section class="panel hidden" id="metricsSection">
+            <div class="section-header"><h2>Metrics</h2></div>
+            <div id="metricsList"></div>
+          </section>
+
+          <section class="panel hidden" id="snapshotsSection">
+            <div class="section-header"><h2>Snapshots</h2></div>
+            <div id="snapshotList"></div>
+          </section>
+
+          <section class="panel hidden" id="checkpointsSection">
+            <div class="section-header"><h2>Checkpoints</h2></div>
+            <div class="checkpoint-actions">
+              <input id="checkpointId" value="EXP-001" />
+              <button class="pixel-btn primary" id="saveCheckpoint">SAVE CHECKPOINT</button>
+              <button class="pixel-btn" id="loadCheckpoint">LOAD CHECKPOINT</button>
+            </div>
+            <div id="checkpointList"></div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
