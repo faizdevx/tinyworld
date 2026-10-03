@@ -20,6 +20,7 @@ from WORLD.AI.perception import Perception
 from WORLD.system.agent import AgentSystem
 from WORLD.Events.event_log import EventLog
 from WORLD.Events.engine import EventEngine
+from WORLD.Communication import CommunicationEngine
 from WORLD.Economy.pricing import PricingSystem
 from WORLD.Cooperation.cooperation import CooperationSystem
 from WORLD.Conflict.conflict import ConflictSystem
@@ -94,6 +95,7 @@ class World:
             )
         self.event_log = EventLog()
         self.event_engine = EventEngine()
+        self.communication_engine = CommunicationEngine()
         self.conflict_system = ConflictSystem()
         self.cooperation_system = CooperationSystem()
         self.reputation_system = ReputationSystem()

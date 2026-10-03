@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import ClassVar, Optional
 
+from WORLD.AI.beliefs import Belief
 from WORLD.AI.brain import Brain
 from WORLD.AI.knowledge import KnowledgeBase
 from WORLD.AI.personality import Personality
@@ -24,6 +25,8 @@ class NPC:
     schedule: dict[int, str] = field(default_factory=dict)
     relationships: dict[str, Relationship] = field(default_factory=dict)
     memories: list[Memory] = field(default_factory=list)
+    communication_memory: list[object] = field(default_factory=list)
+    beliefs: list[Belief] = field(default_factory=list)
     knowledge: KnowledgeBase = field(default_factory=KnowledgeBase)
     social_memory: SocialMemoryStore = field(
         default_factory=SocialMemoryStore,
@@ -222,3 +225,68 @@ class NPC:
         self.social_memory = SocialMemoryStore()
         for memory in self.memories:
             self.social_memory.record(self, memory)
+
+    def receive_message(self, message) -> None:
+        self.communication_memory.append(message)
+
+        memory = Memory(
+            day=1,
+            hour=0,
+            event=f"{message.sender} said: {message.content}",
+            importance=1.0,
+            memory_type="communication",
+            timestamp=message.timestamp[0] * 24 + message.timestamp[1] if isinstance(message.timestamp, tuple) else 0,
+            location=self.location,
+            participants=[message.sender, message.receiver],
+        )
+        self.memories.append(memory)
+        self.social_memory.record(self, memory)
+
+        if hasattr(self, "beliefs"):
+            claims = message.claims or {}
+            subject = claims.get("subject") or "communication"
+            predicate = claims.get("predicate") or "reported"
+            value = claims.get("value") or message.content
+            self.beliefs.append(
+                Belief(
+                    subject=str(subject),
+                    predicate=str(predicate),
+                    value=value,
+                    confidence=0.6,
+                    source=message.sender,
+                    origin_type="communication",
+                )
+            )
+
+    def messages_from(self, speaker: str) -> list[object]:
+        speaker_name = str(speaker).removeprefix("npc:")
+        return [
+            message
+            for message in self.communication_memory
+            if str(message.sender).removeprefix("npc:") == speaker_name
+        ]
+
+    def messages_about(self, topic: str) -> list[object]:
+        topic_value = str(topic).lower()
+        results = []
+        for message in self.communication_memory:
+            haystack = " ".join(
+                [str(message.content).lower(), str(message.sender).lower()]
+                + [str(value).lower() for value in (message.claims or {}).values()]
+            )
+            if topic_value in haystack:
+                results.append(message)
+        return results
+
+    def recent_messages(self, limit: int = 10) -> list[object]:
+        ordered = list(reversed(self.communication_memory))
+        return ordered[:limit]
+
+    def messages_between(self, first: str, second: str) -> list[object]:
+        first_name = str(first).removeprefix("npc:")
+        second_name = str(second).removeprefix("npc:")
+        return [
+            message
+            for message in self.communication_memory
+            if {str(message.sender).removeprefix("npc:"), str(message.receiver).removeprefix("npc:")} == {first_name, second_name}
+        ]
