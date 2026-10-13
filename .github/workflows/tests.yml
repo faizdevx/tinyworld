@@ -1,0 +1,19 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install -e ".[dev]"
+      - name: v1 suite
+        run: python -m pytest -q tests --ignore=tests/v2
+      - name: v2 suite
+        run: python -m pytest -q tests/v2
