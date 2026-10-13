@@ -250,16 +250,24 @@ class Store:
             current = row["parent_id"]
         return chain[::-1]
 
-    def lineage_clause(self, branch_id: str, seq_column: str) -> tuple[str, list]:
-        """SQL predicate selecting rows visible from ``branch_id``."""
+    def lineage_clause(
+        self, branch_id: str, seq_column: str, *, before: bool = False
+    ) -> tuple[str, list]:
+        """SQL predicate selecting rows visible from ``branch_id``.
+
+        ``before`` selects ancestor rows strictly below the fork point. Use it
+        for rows stamped with the seq a tick started at, since such a row
+        belongs to events that come after that seq.
+        """
         parts: list[str] = []
         params: list = []
+        compare = "<" if before else "<="
         for ancestor, limit in self.lineage(branch_id):
             if limit is None:
                 parts.append("(branch_id=?)")
                 params.append(ancestor)
             else:
-                parts.append(f"(branch_id=? AND {seq_column}<=?)")
+                parts.append(f"(branch_id=? AND {seq_column}{compare}?)")
                 params.extend([ancestor, limit])
         return "(" + " OR ".join(parts) + ")", params
 
