@@ -39,7 +39,10 @@ class Observation(Model):
     location: str | None = None
     actor: str = ""
     participants: list[str] = Field(default_factory=list)
+    # What was said. Claims may be false; the observer only knows they were made.
     claims: list[Claim] = Field(default_factory=list)
+    # What was plainly witnessed to happen.
+    facts: list[Claim] = Field(default_factory=list)
     speaker: str | None = None
     addressed: bool = False
 
@@ -61,6 +64,17 @@ def _participants(event: Event) -> list[str]:
     return list(dict.fromkeys(found))
 
 
+def _witnessed_facts(event: Event) -> list[Claim]:
+    """Facts anyone watching the event closely would come away knowing."""
+    facts: list[Claim] = []
+    for effect in event.effects:
+        if isinstance(effect, fx.MoveEntity):
+            facts.append(Claim(subject=effect.entity, predicate="location", value=effect.to))
+        elif isinstance(effect, fx.Kill):
+            facts.append(Claim(subject=effect.entity, predicate="alive", value=False))
+    return facts
+
+
 def _is_loud(event: Event) -> bool:
     if event.loud:
         return True
@@ -77,6 +91,7 @@ def perceive(event: Event, state: WorldState) -> list[Observation]:
     utterances = _utterances(event)
     participants = _participants(event)
     speech_claims = [claim for u in utterances for claim in u.claims]
+    witnessed = _witnessed_facts(event)
     addressees = {a for u in utterances for a in u.addressees}
     speaker = utterances[0].speaker if utterances else None
     text = event.narration or f"Something happened involving {name_of(state, event.actor)}."
@@ -97,6 +112,11 @@ def perceive(event: Event, state: WorldState) -> list[Observation]:
             addressed=observer in addressees,
         )
         fields.update(changes)
+        # Facts are only certain to someone who saw the event itself.
+        clear_view = fields["mode"] in ("self", "public") or (
+            fields["mode"] == "visual" and fields["text"] == text
+        )
+        fields.setdefault("facts", witnessed if clear_view else [])
         return Observation(**fields)
 
     found: dict[str, Observation] = {}
