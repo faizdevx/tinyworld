@@ -18,6 +18,8 @@ institutions and factions, scarce things and live tensions. Then it runs.
 <img src="docs/images/v3-change.jpg" width="49%" alt="Changing the world in a sentence">
 </p>
 
+Contents: [How well it works](#how-well-it-works) · [What you can do](#what-you-can-do-with-it) · [System design](#system-design) · [Roadmap](#roadmap) · [Running it](#running-it)
+
 ## How well it works
 
 Read this first. It says what has been seen working on a real model, what has
@@ -166,6 +168,144 @@ which was most of the memory upkeep. These runs use scripted agents.
 | Is it repeatable? | Yes for a recorded run: replay gives an identical event log with no model calls. A new run on a model differs. |
 | Does it need a key? | No for the offline demo; yes to build a world from your own words. |
 
+## System design
+
+One process, one asyncio loop, one SQLite file. The event log is the only
+source of truth; everything else is derived from it.
+
+```
+ Browser (plain JS: home, genesis, world map, history)      REST + WebSocket
+        |
+ FastAPI app ---- Hub: store, model client, genesis jobs, one BranchRunner per branch
+        |
+ BranchRunner (play / pause / step / skip, holds a lock so one tick runs at a time)
+        |
+ Simulation.tick()  ----------------------------------------------------------
+   1 clock moves; queued god events fire; promises due are settled
+   2 DECIDE   every due agent, in parallel, from the same snapshot
+                 routine (no call) | react (short call) | deliberate (full call)
+   3 RESOLVE  Game Master: rules first, adjudicator for the rest
+   4 SCENES   a line to someone is answered, one scene at a time
+   5 REMEMBER witnesses score and store what they perceived (parallel)
+   6 REFLECT  agents whose memories crossed a threshold reflect (parallel)
+ ---------------------------------------------------------------------------
+        |
+ WorldSession.commit  ->  reducers (closed set of effects)  ->  event log (SQLite)
+        |                                                            |
+ StructuredLLM: schema, repair, trace, budget, replay        snapshots, memories,
+        |                                                    beliefs, journal, bible
+ Anthropic | OpenRouter | Gemini | offline stand-in
+```
+
+**Rules that make it reproducible**
+
+- Models propose, reducers decide. No model output writes state.
+- Every model call is recorded; a run replays from the recording with no calls.
+- Order inside a tick is canonical (agents by id, intents shuffled by a seed
+  derived from the branch and tick), so a replay is identical.
+
+### Who runs at the same time, and who does not
+
+Agents do not message each other. They interact only through the world: one
+acts, an event is committed, others perceive it (by sight, hearing, or word of
+mouth) and remember it. The Game Master sits between every pair.
+
+| Work | Concurrency | Bound |
+|---|---|---|
+| Ticks of one branch | **Sequential.** One at a time, in order. | One lock per branch |
+| Agents deciding in a tick | **Parallel.** Every due agent decides at once from the same snapshot, then all wait for the slowest (a barrier). | Provider limit: OpenRouter 6 in flight, Gemini 4, Anthropic by the SDK |
+| Agents on routine | **No call.** They carry out their day by rule and can jump hours at once. | none |
+| Tier-1 agents | **Staggered.** Each acts every 4th tick, offset by a hash of its id, on the cheap model. | `tier1_every` |
+| Tier-2 background | **No individual.** Morale and influence drift by rule once a day. | none |
+| Simple intents (move, speak, give, wait, rest, work) | **Sequential**, in a seeded shuffle, so two people reaching for the last loaf are settled without a model. | deterministic |
+| Contested intents | **Parallel by group.** One adjudication per group of agents competing for the same thing. | one call per group |
+| Conversation scenes | **Sequential.** Two people, up to 4 turns, at most 6 scenes a tick: at most 12 people talking in one tick. | `max_scenes`, `max_turns` |
+| Memory scoring | **Parallel per witness.** A witness keeps at most 8 observations a tick; routine ones cost no call. | `attention_limit` |
+| Reflection, compaction | **Parallel** for whoever is due. | threshold |
+| Branches | **Independent.** Each has its own runner; they share a process, not state. | one process |
+| Genesis | **Sequential**, stage by stage and section by section. This is why a world takes about 10 minutes. | planned: parallel |
+| Time skips | **Sequential** per period. | planned: per agent per year |
+
+So the honest answer to "how many agents are connected": any number can be due
+in a tick, all of them decide in parallel against one frozen snapshot, and the
+Game Master serialises what they do. The coupling is the shared world, not a
+message bus. The largest worlds run so far hold 10 to 13 named people; a world
+of 100 has not been run, and the per-tick call count grows with the number of
+people who are not on routine.
+
+What this model cannot do: an agent never reacts mid-tick to what another did in
+the same tick (that happens next tick, or inside a scene), and nothing runs
+across machines.
+
+## Roadmap
+
+Versions are stages of capability, not dates. Each lists what ends it.
+
+### v3 (this branch): people live a day
+
+Routines, scenes, promises, knowledge and projects, a quiet interface, prepared
+worlds. **Ends when** one complete run on a real model, with a funded key, shows
+agents acting from goals, a god change, a chronicled skip and judged
+personas. Not yet shown.
+
+### v4: open-weight models, and a cheaper, faster platform
+
+The aim is to run the whole thing on models you can host yourself.
+
+- **Open-weight routing.** Run Llama, Qwen, Gemma, Mistral or DeepSeek models
+  through vLLM, Ollama or OpenRouter, chosen per role in one config. Genesis, the
+  critic and god commands on the strongest model; routine reactions, importance
+  scoring and summaries on a small local one.
+- **Distilling the cheap calls.** Collect the replies that judges and human
+  labels rated well, fine-tune a small open model with LoRA, and route
+  reactions and scene turns to it. Keep it only if judged believability drops
+  by less than a set margin.
+- **Constrained decoding for weak models.** Grammar or JSON-schema decoding so
+  small models stop failing schemas, instead of retrying.
+- **Parallel genesis.** Research queries and the eight sections run together;
+  only failing sections are redrafted. Target: a world in minutes, not ten.
+- **Real-person guard.** Living people are replaced with invented counterparts or
+  kept off-screen; historical figures are labelled.
+- **Platform.** Postgres with vector search, a job queue, one worker per
+  running branch, sign-in, and a budget on by default.
+- **A live benchmark.** Several premises and seeds on a real model, measuring
+  goals pursued, waiting, rule rejections, anachronisms and divergence between
+  runs, tracked over time.
+
+**Ends when:** a world is built and run end to end on open-weight models only,
+at least 5 times cheaper per simulated day than the hosted baseline, with
+judged quality inside the set margin.
+
+### v5: diversity
+
+Today every person is played by the same model, so they share its habits:
+agreeable, fluent, similar in how they talk. v5 is about making a world
+actually varied.
+
+- **Model diversity.** Different people run on different model families and
+  fine-tunes, with their own sampling settings, so they disagree for different
+  reasons. Measured, not assumed.
+- **Cultural and linguistic diversity.** People speak and think in their own
+  language and register (Hindi, Urdu and Awadhi in Lucknow; dialect in a German
+  town), with culture-specific norms in their prompts and mixed-language
+  speech where it is realistic. The interface is translated.
+- **Population diversity.** Background populations built from distributions
+  (age, caste, class, religion, occupation, income) per district, with notable
+  people promoted out of the crowd when events touch them.
+- **World diversity.** A library of eras, regions and genres, so a premise
+  starts from a researched template instead of one generic shape.
+- **Behavioural diversity metrics.** Vocabulary spread, opinion spread,
+  disagreement and refusal rates, and divergence between seeds, reported next to
+  cost.
+- **Shared worlds.** More than one person steering the same world, with roles.
+
+**Ends when:** the diversity metrics beat the v4 baseline by a stated margin on
+the same premises, and a premise in a non-English setting is run in its own
+language with a human reader judging it natural.
+
+Both are plans. None of v4 or v5 is built; the detail behind them is in
+[docs/V3_PLAN.md](docs/V3_PLAN.md).
+
 ## Running it
 
 ```bash
@@ -233,7 +373,7 @@ python -m tinyworld.eval.scenario --provider openrouter --ticks 16 --skip 6mo \
   --premise "What if India never had Jio internet in 2016? Lucknow, Uttar Pradesh."
 ```
 
-## What you can do (screens)
+## The screens
 
 - **Genesis.** Watch a premise pass through premise, divergence, research,
   sections, critic and digest. Read the bible, edit any section, see the
@@ -246,19 +386,10 @@ python -m tinyworld.eval.scenario --provider openrouter --ticks 16 --skip 6mo \
   year with a "why?" trace for each entry, numbers including cost per simulated
   year, an invariant check, and a replay check.
 
-## How it works
+## Code layout
 
-The design is in [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) and
-the v3 plan in [docs/V3_PLAN.md](docs/V3_PLAN.md). In short:
-
-- **State is a fold over an event log.** Nothing changes the world except an
-  event committed through `WorldSession.commit`. Forking a branch copies
-  nothing; it reads its parent's log up to the fork point.
-- **Models never write state.** Agents propose intents. The Game Master settles
-  what it can with rules and asks a model about the rest; either way the result
-  is a list of effects from a closed set, applied by deterministic reducers.
-- **Every model call is recorded.** A run is journaled and can be replayed from
-  the recording with no model calls, producing an identical event log.
+The design documents are [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md)
+and [docs/V3_PLAN.md](docs/V3_PLAN.md).
 
 ```
 tinyworld/
