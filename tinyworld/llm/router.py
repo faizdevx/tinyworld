@@ -30,6 +30,12 @@ DEFAULT_TIERS = {
     "cheap": "claude-haiku-5-5",
 }
 
+GEMINI_TIERS = {
+    "strong": "gemini-2.5-pro",
+    "standard": "gemini-2.5-flash",
+    "cheap": "gemini-2.5-flash-lite",
+}
+
 DEFAULT_EFFORT = {"strong": "high", "standard": "medium", "cheap": "low"}
 
 # Longest matching prefix wins. "*" is the default.
@@ -68,9 +74,26 @@ class LLMConfig:
     prices: dict[str, Price] = field(default_factory=lambda: dict(DEFAULT_PRICES))
 
     @classmethod
-    def load(cls, path: str | Path | None = None) -> "LLMConfig":
-        """Defaults, overridden by a JSON file (``TINYWORLD_LLM_CONFIG`` or ``path``)."""
-        config = cls()
+    def gemini(cls) -> "LLMConfig":
+        """Tiers on Gemini models. Override with GEMINI_MODEL_STRONG, _STANDARD, _CHEAP.
+
+        No prices are set: they change, and a wrong one is worse than none.
+        Costs read as zero (and budgets never trip) until prices are given in
+        the file named by TINYWORLD_LLM_CONFIG.
+        """
+        tiers = {
+            "strong": os.environ.get("GEMINI_MODEL_STRONG", GEMINI_TIERS["strong"]),
+            "standard": os.environ.get("GEMINI_MODEL_STANDARD", GEMINI_TIERS["standard"]),
+            "cheap": os.environ.get("GEMINI_MODEL_CHEAP", GEMINI_TIERS["cheap"]),
+        }
+        return cls(tiers=tiers, prices={})
+
+    @classmethod
+    def load(
+        cls, path: str | Path | None = None, *, provider: str = "anthropic"
+    ) -> "LLMConfig":
+        """Provider defaults, overridden by a JSON file (``TINYWORLD_LLM_CONFIG`` or ``path``)."""
+        config = cls.gemini() if provider == "gemini" else cls()
         path = path or os.environ.get("TINYWORLD_LLM_CONFIG")
         if path and Path(path).exists():
             data = json.loads(Path(path).read_text(encoding="utf-8"))

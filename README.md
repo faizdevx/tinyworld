@@ -30,8 +30,28 @@ Everything else — the map, god commands in a small fixed syntax, time skips,
 forks, history — works the same. It is for trying the application, not for
 judging how interesting a world is.
 
+**With Gemini.** Set `GEMINI_API_KEY` instead (or `TINYWORLD_PROVIDER=gemini` if
+both keys are set). Tiers map to `gemini-2.5-pro`, `gemini-2.5-flash` and
+`gemini-2.5-flash-lite`; change them with `GEMINI_MODEL_STRONG`, `_STANDARD`,
+`_CHEAP`. No Gemini prices are built in, so cost shows as $0 and a budget cap
+will not trip until you add prices to the JSON file below.
+
 Which model each role uses is set in one place, `tinyworld/llm/router.py`, and
 can be overridden with a JSON file named by `TINYWORLD_LLM_CONFIG`.
+
+### Checking that a model works with it
+
+```bash
+python -m tinyworld.llm.smoke --provider gemini
+python -m tinyworld.llm.smoke --prompt "Any question you like"
+python -m tinyworld.llm.smoke --only agent god
+python -m tinyworld.llm.smoke --list-models
+```
+
+It sends the application's real prompts (an agent deciding, the Game Master
+adjudicating, a god command, genesis reading a premise), validates each reply
+against the real schema, and reports pass or fail, repairs needed, tokens and
+time. The key may also be put in a `.env` file in the project folder.
 
 ## What you can do
 

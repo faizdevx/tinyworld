@@ -23,16 +23,40 @@ from tinyworld.llm.trace import Tracer
 from tinyworld.llm.types import LLMClient
 
 
-def default_client() -> LLMClient | None:
-    """An Anthropic client when credentials are configured, else None."""
-    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
-        return None
-    try:
-        from tinyworld.llm.client import AnthropicClient
+def chosen_provider() -> str | None:
+    """"anthropic", "gemini" or None.
 
-        return AnthropicClient()
+    ``TINYWORLD_PROVIDER`` decides when set; otherwise whichever key is present,
+    Anthropic first.
+    """
+    wanted = os.environ.get("TINYWORLD_PROVIDER", "").strip().lower()
+    if wanted in ("anthropic", "gemini"):
+        return wanted
+    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+        return "anthropic"
+    if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+        return "gemini"
+    return None
+
+
+def make_client(provider: str | None) -> LLMClient | None:
+    try:
+        if provider == "anthropic":
+            from tinyworld.llm.client import AnthropicClient
+
+            return AnthropicClient()
+        if provider == "gemini":
+            from tinyworld.llm.gemini import GeminiClient
+
+            return GeminiClient()
     except Exception:
         return None
+    return None
+
+
+def default_client() -> LLMClient | None:
+    """A client for the configured provider, or None when there is no key."""
+    return make_client(chosen_provider())
 
 
 def default_search(online: bool) -> SearchProvider:
@@ -94,8 +118,11 @@ class Hub:
         offline_fallback: bool = True,
     ) -> None:
         self.store = store or Store()
-        self.config = config or LLMConfig.load()
-        self.client = client if client is not None else default_client()
+        provider = chosen_provider()
+        self.client = client if client is not None else make_client(provider)
+        self.config = config or LLMConfig.load(
+            provider="gemini" if provider == "gemini" else "anthropic"
+        )
         self.offline_fallback = offline_fallback
         self.embedder = embedder or HashEmbedder()
         self.tracer = Tracer(self.store, self.config)
