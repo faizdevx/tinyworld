@@ -3,7 +3,7 @@
 import json
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from tinyworld.core.state import Model
 from tinyworld.core.store import Store
@@ -157,6 +157,16 @@ class FigureSpec(Model):
     does_not_know: list[str] = Field(default_factory=list)
     possessions: list[Stock] = Field(default_factory=list)
     relations: list[RelationSpec] = Field(default_factory=list)
+
+
+    @field_validator(
+        "traits", "values", "goals", "fears", "secrets", "knows", "does_not_know",
+        mode="after",
+    )
+    @classmethod
+    def _drop_blank(cls, items: list[str]) -> list[str]:
+        # A list of empty strings reads as "present" but says nothing.
+        return [item.strip() for item in items if item and item.strip()]
 
 
 class KeyFigures(Model):

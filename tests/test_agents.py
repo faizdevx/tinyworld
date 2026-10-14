@@ -566,3 +566,26 @@ def test_simulation_without_a_model_only_advances_time():
     result = run(Simulation(session, None).tick())
     assert {e.actor for e in result.events} == {"system"} and result.outcomes == []
     assert session.state.sim_time == toy.START + timedelta(hours=1)
+
+
+def test_bare_slugs_and_names_are_resolved_to_ids():
+    session = toy.build_toy()
+    fake = FakeLLM({"agent.act": {
+        "verb": "give", "target": "Otto", "args": {"item": "coin", "quantity": 1},
+        "say": {"text": "Here.", "to": ["Otto Brandt"],
+                "claims": [{"subject": "otto_brandt", "predicate": "hoards", "value": "grain"}]},
+    }})
+    session.commit([EventDraft(actor="system", effects=[fx.MoveEntity(entity=toy.OTTO, to=toy.BAKERY)])])
+    result = act(session, build_agent(session, fake))
+    assert result.ok and len(fake.calls) == 1
+    intent = result.intent
+    assert intent.target == toy.OTTO and intent.args["item"] == toy.COIN
+    assert intent.utterance.addressees == [toy.OTTO]
+    assert intent.utterance.claims[0].subject == toy.OTTO
+
+
+def test_move_by_bare_slug_is_accepted():
+    session = toy.build_toy()
+    fake = FakeLLM({"agent.act": {"verb": "move", "target": "market_square", "text": "go out"}})
+    result = act(session, build_agent(session, fake))
+    assert result.ok and result.intent.target == toy.SQUARE

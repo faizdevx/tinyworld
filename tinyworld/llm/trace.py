@@ -38,12 +38,16 @@ class Tracer:
         key = base_key(request.role, context)
         ordinal = self._next_ordinal(context.branch_id, key)
         call_id = f"{context.branch_id}|{key}|{ordinal}"
-        cost = self.config.cost(
-            result.model,
-            result.input_tokens,
-            result.output_tokens,
-            result.cache_read_tokens,
-            result.cache_write_tokens,
+        cost = (
+            result.cost
+            if result.cost is not None
+            else self.config.cost(
+                result.model,
+                result.input_tokens,
+                result.output_tokens,
+                result.cache_read_tokens,
+                result.cache_write_tokens,
+            )
         )
         self.store.execute(
             "INSERT INTO llm_calls VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -120,4 +124,5 @@ class ReplayLLM:
             cache_read_tokens=response.get("cache_read_tokens", 0),
             cache_write_tokens=response.get("cache_write_tokens", 0),
             refused=response.get("refused", False),
+            cost=row["cost"],
         )

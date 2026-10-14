@@ -36,6 +36,8 @@ class LLMResult:
     cache_write_tokens: int = 0
     latency_ms: int = 0
     refused: bool = False
+    # Cost in dollars when the provider reports it; otherwise computed from prices.
+    cost: float | None = None
 
 
 class LLMClient(Protocol):
@@ -46,3 +48,11 @@ class LLMClient(Protocol):
 
 class LLMError(RuntimeError):
     """A provider call failed in a way the caller should treat as a bad attempt."""
+
+
+class LLMFatal(LLMError):
+    """A failure no retry or fallback can fix: a bad or expired key, no credit.
+
+    Unlike other errors this is not swallowed into a safe default. Carrying on
+    would produce a world in which everyone silently does nothing.
+    """

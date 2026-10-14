@@ -40,7 +40,7 @@ Actions (verb, then what to fill in):
 - rest, wait: nothing else needed
 
 You may also `say` something while doing any other action.
-Use ids exactly as shown in [brackets]. `text` is your own short account of what \
+Use ids exactly as shown in [brackets], including the part before the colon (for example place:market_square, never just market_square). `text` is your own short account of what \
 you are trying to do and why; the referee reads it.
 `plan` is your next few intended steps, in order. Send a new plan only when it changes."""
 
@@ -61,6 +61,36 @@ class Decision(Model):
     text: str = ""
     say: Say | None = None
     plan: list[str] | None = None
+
+
+def canonical(state: WorldState, decision: Decision) -> Decision:
+    """Replace names and bare slugs ("market_square", "Lena") with real ids.
+
+    Models often drop the kind prefix or use a display name. Both are
+    unambiguous enough to repair; a reference that matches nothing, or more
+    than one thing, is left alone for the rules to reject.
+    """
+    from tinyworld.god.parser import resolve
+
+    def fix(value):
+        if isinstance(value, str) and value and value not in state.entities:
+            return resolve(state, value) or value
+        return value
+
+    changes: dict = {"target": fix(decision.target)}
+    if "item" in decision.args:
+        changes["args"] = {**decision.args, "item": fix(decision.args["item"])}
+    if decision.say is not None:
+        changes["say"] = decision.say.model_copy(
+            update={
+                "to": [fix(person) for person in decision.say.to],
+                "claims": [
+                    claim.model_copy(update={"subject": fix(claim.subject)})
+                    for claim in decision.say.claims
+                ],
+            }
+        )
+    return decision.model_copy(update=changes)
 
 
 def to_intent(agent_id: str, decision: Decision) -> Intent:
@@ -221,7 +251,7 @@ class Agent:
 
         def check(decision: Decision) -> str | None:
             try:
-                intent = to_intent(entity.id, decision)
+                intent = to_intent(entity.id, canonical(state, decision))
             except ValueError as exc:
                 return str(exc)
             verdict = rules.check(state, intent)
@@ -242,7 +272,7 @@ class Agent:
             max_tokens=1500,
             check=check,
         )
-        decision = reply.value
+        decision = canonical(state, reply.value)
         if reply.ok and decision.plan is not None:
             self.planner.store(
                 branch_id, entity.id, decision.plan, state.seq, state.sim_time

@@ -387,3 +387,14 @@ def test_anthropic_client_retries_without_the_schema_when_it_is_rejected():
     assert result.text == '{"to": "x"}'
     assert "format" in attempts[0] or attempts[0] is attempts[1]
     assert attempts[1] == {"effort": "low"}
+
+
+def test_a_rejected_key_is_not_swallowed_into_a_default():
+    from tinyworld.llm.types import LLMFatal
+
+    class Expired:
+        async def complete(self, request, model, effort):
+            raise LLMFatal("key expired")
+
+    with pytest.raises(LLMFatal, match="key expired"):
+        call(structured(Expired()))

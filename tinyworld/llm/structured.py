@@ -9,7 +9,7 @@ from pydantic import BaseModel, ValidationError
 
 from tinyworld.llm.router import LLMConfig
 from tinyworld.llm.trace import Tracer
-from tinyworld.llm.types import CallContext, LLMClient, LLMError, LLMRequest
+from tinyworld.llm.types import CallContext, LLMClient, LLMError, LLMFatal, LLMRequest
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -91,6 +91,8 @@ class StructuredLLM:
             )
             try:
                 result = await self.client.complete(request, route.model, route.effort)
+            except LLMFatal:
+                raise
             except LLMError as exc:
                 error = str(exc)
                 continue
