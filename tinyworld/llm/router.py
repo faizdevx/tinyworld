@@ -57,6 +57,7 @@ DEFAULT_ROLES = {
     "gm.conflict": "strong",
     "agent.act": "standard",
     "agent.act.tier1": "cheap",
+    "agent.scene": "standard",
     "agent.reflect": "standard",
     "agent.persona": "standard",
     "gm.adjudicate": "standard",

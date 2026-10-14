@@ -166,6 +166,7 @@ class Agent:
         last_seen_seq: int,
         hint: str = "",
         recent: list[str] | None = None,
+        promises: list[str] | None = None,
     ) -> tuple[str, list[int]]:
         new = self.memory.list(
             branch_id, entity.id, kinds=EPISODIC, after_seq=last_seen_seq,
@@ -241,6 +242,8 @@ class Agent:
         if Planner.should_reconsider(plan, [m.importance for m in new]):
             lines.append("Something has changed or you have no plan: reconsider it.")
 
+        if promises:
+            lines += ["", "Promises outstanding:"] + promises
         if recent:
             lines += ["", "What you did lately (oldest first):"]
             lines += [f"- {text}" for text in recent[-5:]]
@@ -267,13 +270,14 @@ class Agent:
         last_seen_seq: int,
         hint: str = "",
         recent: list[str] | None = None,
+        promises: list[str] | None = None,
     ) -> Acted:
         persona = persona_of(entity)
         wait = Intent(agent=entity.id, verb=Verb.WAIT, text="unsure what to do")
         if persona is None:
             return Acted(wait, "", False, None)
         prompt, causes = self._prompt(
-            state, entity, persona, branch_id, last_seen_seq, hint, recent
+            state, entity, persona, branch_id, last_seen_seq, hint, recent, promises
         )
 
         def check(decision: Decision) -> str | None:

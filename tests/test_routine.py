@@ -223,9 +223,18 @@ def test_a_routine_world_replays_to_an_identical_log():
 def test_a_long_stretch_of_routine_is_paid_for_all_of_it():
     session = lived_in(toy.build_toy(), wage=6)
     sim = Simulation(session, llm_for(session, quiet_llm()), deliberate_hours=48)
-    run(sim.tick(60))  # 08:00 -> 09:00
+    run(sim.tick(60))  # 08:00 -> 09:00, everyone decides afresh
+    run(sim.tick(60))  # 09:00 -> 10:00, everyone is at their place of work
     before = session.state.entities[toy.ANNA].inventory[toy.COIN]
     result = run(sim.tick())
-    assert result.step_minutes == 480
+    assert result.step_minutes == 7 * 60
     assert session.state.sim_time.hour == 17
-    assert session.state.entities[toy.ANNA].inventory[toy.COIN] == before + 6 * 8
+    assert session.state.entities[toy.ANNA].inventory[toy.COIN] == before + 6 * 7
+
+
+def test_nobody_skips_a_day_while_someone_is_still_walking_to_work():
+    session = lived_in(toy.build_toy())
+    sim = Simulation(session, llm_for(session, quiet_llm()), deliberate_hours=48)
+    run(sim.tick(60))
+    result = run(sim.tick())
+    assert result.step_minutes == 60

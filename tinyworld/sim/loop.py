@@ -13,7 +13,7 @@ from tinyworld.agents.persona import Persona, persona_of, render
 from tinyworld.agents.planner import Planner
 from tinyworld.agents.reflection import Reflector
 from tinyworld.core import effects as fx
-from tinyworld.core.events import Event, EventDraft, Intent, Outcome
+from tinyworld.core.events import Event, EventDraft, Intent, Outcome, Verb
 from tinyworld.core.session import WorldSession
 from tinyworld.core.state import Entity, Fact, Model, WorldState
 from tinyworld.gm.adjudicator import Adjudicator
@@ -24,11 +24,15 @@ from tinyworld.llm.embed import Embedder, HashEmbedder
 from tinyworld.llm.structured import StructuredLLM
 from tinyworld.llm.types import CallContext
 from tinyworld.sim import tiers as tiering
+from tinyworld.sim import commitments as pledges
 from tinyworld.sim.budget import Budget
+from tinyworld.sim.scene import Scenes, openings
 from tinyworld.sim.schedule import Scheduler
 from tinyworld.sim.scheduler import StepPolicy
 from tinyworld.sim.step import apply_intents
 from tinyworld.sim.tiers import TierPolicy, tier_of
+
+COMMITMENT_LEAD_MINUTES = 90
 
 PROMOTE_SYSTEM = (
     PERSONA_SYSTEM
@@ -59,6 +63,10 @@ class TickResult:
     promoted: list[str] = field(default_factory=list)
     # How each deciding agent was driven this tick: routine, react or deliberate.
     modes: dict[str, str] = field(default_factory=dict)
+    scenes: int = 0
+    scene_turns: int = 0
+    commitments_made: int = 0
+    commitments_resolved: int = 0
 
     @property
     def routine(self) -> int:
@@ -90,6 +98,7 @@ class Simulation:
         tiers: TierPolicy | None = None,
         budget: Budget | None = None,
         routines: bool = True,
+        scenes: bool = True,
         salience: float = 0.5,
         deliberate_hours: float = 12.0,
         max_jump_minutes: int = 480,
@@ -129,6 +138,7 @@ class Simulation:
                 llm, self.memory, self.beliefs, self.planner, world_digest=world_digest,
                 role="agent.act.tier1", memories_k=3, new_limit=5, beliefs_limit=4,
             )
+        self.scenes = Scenes(self) if (scenes and llm is not None) else None
         self._last_events: list[Event] | None = None
         self._last_step: int | None = None
 
@@ -189,6 +199,10 @@ class Simulation:
         if block is None:
             return "deliberate", None
         branch = self.session.branch_id
+        if pledges.due_soon_for(
+            state, entity.id, timedelta(minutes=COMMITMENT_LEAD_MINUTES)
+        ):
+            return "react", block
         since = self._since_last_model_call(entity.id)
         if since is None or since >= timedelta(hours=self.deliberate_hours):
             return "deliberate", block
@@ -233,12 +247,18 @@ class Simulation:
         if pending:
             wait = int((pending[0][1] - state.sim_time).total_seconds() // 60)
             horizon = min(horizon, max(1, wait))
+        open_promises = state.open_commitments()
+        if open_promises:
+            wait = int((open_promises[0].due - state.sim_time).total_seconds() // 60)
+            horizon = min(horizon, max(1, wait - COMMITMENT_LEAD_MINUTES))
         if horizon <= step:
             return step, {}
         intents = {}
         for person in minds:
             intent = daily.routine_intent(state, person, blocks[person.id], horizon)
-            if intent is None:
+            # Someone still on their way to their place: let the ordinary
+            # step carry them there before time is skipped.
+            if intent is None or intent.verb is Verb.MOVE:
                 return step, {}
             intents[person.id] = intent
         return horizon, intents
@@ -328,6 +348,41 @@ class Simulation:
             if event is not None:
                 observations += perceive(event, store.state_at(branch, seq))
         return await self.remember(observations, tick_seq)
+
+    # -- notes and promises ---------------------------------------------
+
+    def write_notes(
+        self, notes: list[tuple[str, str]], seq: int, importance: float = 0.7
+    ) -> None:
+        """A first-hand memory for each (person, text), at event ``seq``."""
+        state = self.session.state
+        for agent_id, text in notes:
+            entity = state.entities.get(agent_id)
+            if entity is None or persona_of(entity) is None:
+                continue
+            self.memory.write(
+                self.session.branch_id, agent_id,
+                [
+                    NewMemory(
+                        kind="observation", text=text, created_seq=seq,
+                        sim_time=state.sim_time, importance=importance,
+                        source_events=[seq] if seq > 0 else [],
+                    )
+                ],
+            )
+
+    def settle_commitments(self) -> list[Event]:
+        """Resolve promises that have fallen due, and let both sides know."""
+        session = self.session
+        events: list[Event] = []
+        for draft, notes in pledges.settle(
+            session.state, session.store, session.branch_id
+        ):
+            committed = session.commit([draft], atomic=False).events
+            if committed:
+                events += committed
+                self.write_notes(notes, committed[-1].seq, 0.8)
+        return events
 
     # -- promotion ------------------------------------------------------
 
@@ -597,6 +652,9 @@ class Simulation:
         result.events += opening.events
         observations = [o for batch in opening.observed for o in batch]
         result.events += await self.upkeep(before, tick_seq)
+        settled = self.settle_commitments()
+        result.events += settled
+        result.commitments_resolved = len(settled)
 
         # 2. Everyone decides at once, from the same view of the world.
         state = session.state
@@ -631,6 +689,7 @@ class Simulation:
                     self._last_act_tick(entity.id),
                     hint=hint,
                     recent=self.recent_actions(entity.id),
+                    promises=pledges.lines_for(state, entity.id),
                 )
                 for entity, agent, hint in deciders
             )
@@ -649,9 +708,23 @@ class Simulation:
         result.outcomes = step_result.outcomes
         observations += step_result.observations
 
+        # 3b. A line addressed to someone is answered, within the same tick.
+        scene_events: list[Event] = []
+        if self.scenes is not None:
+            for speaker, listener, line in openings(
+                session.state, step_result.events, self.scenes.max_scenes
+            ):
+                scene = await self.scenes.run(tick_seq, speaker, listener, line)
+                scene_events += scene.events
+                observations += scene.observations
+                result.scenes += scene.scenes
+                result.scene_turns += scene.turns
+                result.commitments_made += scene.commitments
+            result.events += scene_events
+
         # 4. People drawn into events start deciding for themselves.
         result.promoted = await self.promote(
-            self.tiers.involved(session.state, step_result.events)
+            self.tiers.involved(session.state, step_result.events + scene_events)
         )
 
         # 5. Witnesses remember and update what they believe.

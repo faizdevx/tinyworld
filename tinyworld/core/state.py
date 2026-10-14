@@ -18,6 +18,7 @@ from tinyworld.core.ids import (
 
 _FACT_ID = re.compile(r"^fact:[a-z0-9][a-z0-9_]*$")
 _PROCESS_ID = re.compile(r"^process:[a-z0-9][a-z0-9_]*$")
+_COMMITMENT_ID = re.compile(r"^commitment:[a-z0-9][a-z0-9_]*$")
 
 EntityKind = Literal["person", "place", "item", "org", "faction", "resource"]
 
@@ -104,6 +105,34 @@ class Process(Model):
         return self
 
 
+class Commitment(Model):
+    """A promise one person made to another, to be kept by a time."""
+
+    id: str
+    by: EntityId
+    to: EntityId
+    kind: Literal["meet", "give"]
+    text: str = Field(min_length=1)
+    due: datetime
+    made_at: datetime
+    # The log position the promise was made at; later transfers count towards it.
+    made_seq: int = Field(default=0, ge=0)
+    place: EntityId | None = None
+    item: EntityId | None = None
+    quantity: int = Field(default=1, gt=0)
+    status: Literal["open", "kept", "broken", "released"] = "open"
+
+    @model_validator(mode="after")
+    def _valid(self):
+        if not _COMMITMENT_ID.match(self.id):
+            raise ValueError(f"invalid commitment id: {self.id!r}")
+        if self.kind == "meet" and self.place is None:
+            raise ValueError("a meeting promise needs a place")
+        if self.kind == "give" and self.item is None:
+            raise ValueError("a promise to give needs an item")
+        return self
+
+
 class WorldState(Model):
     sim_time: datetime
     entities: dict[EntityId, Entity] = Field(default_factory=dict)
@@ -111,6 +140,7 @@ class WorldState(Model):
     relations: dict[str, Relation] = Field(default_factory=dict)
     facts: dict[FactId, Fact] = Field(default_factory=dict)
     processes: dict[ProcessId, Process] = Field(default_factory=dict)
+    commitments: dict[str, Commitment] = Field(default_factory=dict)
     rules: dict[str, JsonValue] = Field(default_factory=dict)
     seq: int = 0
 
@@ -151,6 +181,12 @@ class WorldState(Model):
 
     def relation(self, source: EntityId, dest: EntityId) -> Relation | None:
         return self.relations.get(relation_key(source, dest))
+
+    def open_commitments(self, person: EntityId | None = None) -> list[Commitment]:
+        found = [c for c in self.commitments.values() if c.status == "open"]
+        if person is not None:
+            found = [c for c in found if person in (c.by, c.to)]
+        return sorted(found, key=lambda c: (c.due, c.id))
 
     def active_facts(self) -> list[Fact]:
         return [
