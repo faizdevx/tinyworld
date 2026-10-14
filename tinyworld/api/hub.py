@@ -30,10 +30,12 @@ def chosen_provider() -> str | None:
     Anthropic first.
     """
     wanted = os.environ.get("TINYWORLD_PROVIDER", "").strip().lower()
-    if wanted in ("anthropic", "gemini"):
+    if wanted in ("anthropic", "gemini", "openrouter"):
         return wanted
     if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
         return "anthropic"
+    if os.environ.get("OPENROUTER_API_KEY"):
+        return "openrouter"
     if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
         return "gemini"
     return None
@@ -49,6 +51,10 @@ def make_client(provider: str | None) -> LLMClient | None:
             from tinyworld.llm.gemini import GeminiClient
 
             return GeminiClient()
+        if provider == "openrouter":
+            from tinyworld.llm.openrouter import OpenRouterClient
+
+            return OpenRouterClient()
     except Exception:
         return None
     return None
@@ -121,7 +127,7 @@ class Hub:
         provider = chosen_provider()
         self.client = client if client is not None else make_client(provider)
         self.config = config or LLMConfig.load(
-            provider="gemini" if provider == "gemini" else "anthropic"
+            provider=provider if provider in ("gemini", "openrouter") else "anthropic"
         )
         self.offline_fallback = offline_fallback
         self.embedder = embedder or HashEmbedder()

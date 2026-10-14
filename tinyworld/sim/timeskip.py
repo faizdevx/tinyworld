@@ -8,7 +8,7 @@ from tinyworld.agents.persona import persona_of
 from tinyworld.core import effects as fx
 from tinyworld.core.events import Event, EventDraft
 from tinyworld.llm.types import CallContext
-from tinyworld.sim.chronicler import Chronicler, outcome_effects, validate
+from tinyworld.sim.chronicler import Chronicler, canonical, outcome_effects, validate
 from tinyworld.sim.loop import Simulation
 from tinyworld.sim.tiers import tier_of
 
@@ -121,6 +121,7 @@ class TimeSkip:
             drafts: list[EventDraft] = []
             accepted = []
             for proposed in proposal.events:
+                proposed = canonical(working, proposed)
                 after, reason = validate(working, proposed, session.registry)
                 extra = outcome_effects(working, proposed) if after is not None else []
                 if after is not None and extra:

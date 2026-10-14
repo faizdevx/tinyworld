@@ -112,7 +112,12 @@ def check(bible: Bible) -> list[Finding]:
             add("contradiction", "figures", f"{figure.name} belongs to unknown faction {figure.faction!r}")
         for possession in figure.possessions:
             if _slug(possession.resource) not in resource_slugs:
-                add("contradiction", "figures", f"{figure.name} holds undefined resource {possession.resource!r}")
+                # The fix is to define the resource, which lives in economy.
+                add(
+                    "contradiction", "economy",
+                    f"resource {possession.resource!r} is held by {figure.name} but is not "
+                    "defined; add it to the resources list",
+                )
         for relation in figure.relations:
             if _slug(relation.to) not in figure_slugs:
                 add("gap", "figures", f"{figure.name} has a relation to unknown person {relation.to!r}", blocking=False)

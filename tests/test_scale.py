@@ -609,3 +609,22 @@ def test_replay_reproduces_budget_driven_behaviour():
     assert ledger.total(session.store, replay.branch_id).cost == pytest.approx(
         ledger.total(session.store, session.branch_id).cost
     )
+
+
+def test_chronicle_names_and_bare_slugs_are_resolved_before_validation():
+    session = toy.build_toy()
+    chronicle = {
+        "summary": "A quiet month.",
+        "events": [
+            {
+                "narration": "Lena Vogel moved to the tavern.",
+                "participants": ["lena_vogel", "Anna Keller"],
+                "location": "golden_stag",
+                "effects": [{"type": "MoveEntity", "entity": "Lena Vogel", "to": "golden_stag"}],
+            }
+        ],
+    }
+    skipper, sim, _ = scripted_skip(session, chronicle)
+    result = run(skipper.skip(DAY))
+    assert result.rejected == []
+    assert session.state.entities[toy.LENA].location == toy.TAVERN

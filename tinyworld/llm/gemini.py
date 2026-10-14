@@ -8,18 +8,22 @@ Replies are validated by ``StructuredLLM`` regardless of what the model sends.
 import asyncio
 import json
 import os
+import re
 import time
+from collections import deque
 
 import httpx
 
 from tinyworld.llm.client import provider_schema
-from tinyworld.llm.types import LLMError, LLMRequest, LLMResult
+from tinyworld.llm.types import LLMError, LLMFatal, LLMRequest, LLMResult
 
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 # Finish reasons that mean the model declined, not that it ran out of room.
 _REFUSALS = {"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION", "IMAGE_SAFETY"}
 _RETRYABLE = {429, 500, 502, 503, 504}
+_RETRY_IN = re.compile(r"retry in ([0-9.]+)s", re.IGNORECASE)
+MAX_WAIT = 65.0
 
 # Thinking models spend output tokens on reasoning before they answer.
 THINKING_HEADROOM = 2048
@@ -36,10 +40,13 @@ class GeminiClient:
         *,
         http: httpx.AsyncClient | None = None,
         timeout: float = 120.0,
-        retries: int = 2,
+        retries: int = 4,
         backoff: float = 1.5,
         sleep=asyncio.sleep,
         base_url: str = BASE_URL,
+        max_concurrent: int | None = None,
+        requests_per_minute: int | None = None,
+        clock=time.monotonic,
     ) -> None:
         key = api_key or api_key_from_env()
         if not key:
@@ -50,6 +57,49 @@ class GeminiClient:
         self.backoff = backoff
         self._sleep = sleep
         self.base_url = base_url.rstrip("/")
+        # Free keys allow only a handful of requests a minute. Concurrency and
+        # pacing are configurable: GEMINI_CONCURRENCY and GEMINI_RPM.
+        limit = max_concurrent or int(os.environ.get("GEMINI_CONCURRENCY", "4"))
+        self._slots = asyncio.Semaphore(max(1, limit))
+        self.rpm = (
+            requests_per_minute
+            if requests_per_minute is not None
+            else int(os.environ.get("GEMINI_RPM", "0"))
+        )
+        self._sent: deque[float] = deque()
+        self._pace_lock = asyncio.Lock()
+        self._clock = clock
+
+    async def _pace(self) -> None:
+        """Hold a request back until it fits under the per-minute allowance."""
+        if self.rpm <= 0:
+            return
+        async with self._pace_lock:
+            while True:
+                now = self._clock()
+                while self._sent and now - self._sent[0] >= 60.0:
+                    self._sent.popleft()
+                if len(self._sent) < self.rpm:
+                    self._sent.append(now)
+                    return
+                await self._sleep(60.0 - (now - self._sent[0]) + 0.05)
+
+    @staticmethod
+    def _retry_delay(response: httpx.Response) -> float:
+        """Seconds the server asked us to wait, from its error details."""
+        try:
+            error = response.json().get("error", {})
+        except ValueError:
+            return 0.0
+        for detail in error.get("details", []) or []:
+            delay = str(detail.get("retryDelay", ""))
+            if delay.endswith("s"):
+                try:
+                    return float(delay[:-1])
+                except ValueError:
+                    pass
+        found = _RETRY_IN.search(error.get("message", "") or "")
+        return float(found.group(1)) if found else 0.0
 
     # -- requests ---------------------------------------------------------
 
@@ -75,11 +125,13 @@ class GeminiClient:
 
     async def _post(self, model: str, body: dict) -> httpx.Response:
         try:
-            return await self._http.post(
-                f"{self.base_url}/models/{model}:generateContent",
-                headers={"x-goog-api-key": self._key, "Content-Type": "application/json"},
-                json=body,
-            )
+            async with self._slots:
+                await self._pace()
+                return await self._http.post(
+                    f"{self.base_url}/models/{model}:generateContent",
+                    headers={"x-goog-api-key": self._key, "Content-Type": "application/json"},
+                    json=body,
+                )
         except httpx.TimeoutException as exc:
             raise LLMError(f"timeout after {exc}") from exc
         except httpx.HTTPError as exc:
@@ -107,10 +159,15 @@ class GeminiClient:
                 with_schema = False
                 response = await self._post(model, self._body(request, with_schema=False))
             if response.status_code in _RETRYABLE and attempt < self.retries:
-                await self._sleep(self.backoff * (2**attempt))
+                wait = max(self.backoff * (2**attempt), self._retry_delay(response))
+                await self._sleep(min(wait, MAX_WAIT))
                 continue
             break
         assert response is not None
+        if response.status_code in (401, 403) or (
+            response.status_code == 400 and "API key" in response.text
+        ):
+            raise LLMFatal(f"gemini rejected the key: {self._message(response)}")
         if response.status_code != 200:
             raise LLMError(f"gemini {self._message(response)}")
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
@@ -18,6 +18,7 @@ from tinyworld.core.causes import cause_graph
 from tinyworld.core.events import Intent
 from tinyworld.core.store import Store, StoreError
 from tinyworld.core.time import parse_step
+from tinyworld.llm.types import LLMFatal
 from tinyworld.eval import anachronism, invariants, judge
 from tinyworld.eval.metrics import world_metrics
 from tinyworld.sim.replay import replay
@@ -76,6 +77,10 @@ class GodRequest(BaseModel):
 def create_app(hub: Hub | None = None) -> FastAPI:
     app = FastAPI(title="TinyWorld")
     app.state.hub = hub or Hub()
+
+    @app.exception_handler(LLMFatal)
+    async def model_unavailable(request, exc: LLMFatal):
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
 
     def the_hub() -> Hub:
         return app.state.hub

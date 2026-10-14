@@ -3,7 +3,7 @@
 import copy
 import time
 
-from tinyworld.llm.types import LLMError, LLMRequest, LLMResult
+from tinyworld.llm.types import LLMError, LLMFatal, LLMRequest, LLMResult
 
 # JSON Schema keywords the structured-output endpoint may not accept. Pydantic
 # validates these after the call, so dropping them here loses nothing.
@@ -90,6 +90,8 @@ class AnthropicClient:
                 else:
                     params.pop("output_config")
                 response = await self._client.messages.create(**params)
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as exc:
+            raise LLMFatal(f"anthropic rejected the key: {exc.message}") from exc
         except anthropic.RateLimitError as exc:
             raise LLMError(f"rate limited: {exc.message}") from exc
         except anthropic.APIStatusError as exc:

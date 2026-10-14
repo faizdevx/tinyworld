@@ -76,6 +76,37 @@ def _requirements_unmet(state: WorldState, process) -> list[str]:
     return missing
 
 
+_ID_FIELDS = ("entity", "to", "source", "dest", "holder", "item", "speaker")
+
+
+def canonical(state: WorldState, event: ChronicleEvent) -> ChronicleEvent:
+    """Resolve names and bare slugs ("karan_verma") to ids, as agents' are."""
+    from tinyworld.god.parser import resolve
+
+    def fix(value):
+        if isinstance(value, str) and value and value not in state.entities:
+            return resolve(state, value) or value
+        return value
+
+    effects = []
+    for effect in event.effects:
+        changes = {
+            name: fix(getattr(effect, name))
+            for name in _ID_FIELDS
+            if isinstance(getattr(effect, name, None), str)
+        }
+        if hasattr(effect, "addressees"):
+            changes["addressees"] = [fix(a) for a in effect.addressees]
+        effects.append(effect.model_copy(update=changes) if changes else effect)
+    return event.model_copy(
+        update={
+            "participants": [fix(p) for p in event.participants],
+            "location": fix(event.location),
+            "effects": effects,
+        }
+    )
+
+
 def validate(
     state: WorldState, event: ChronicleEvent, registry: AttrRegistry = REGISTRY
 ) -> tuple[WorldState | None, str]:

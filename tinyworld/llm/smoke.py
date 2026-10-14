@@ -168,7 +168,7 @@ async def run_steps(
 
 async def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--provider", choices=["gemini", "anthropic"], default=None)
+    parser.add_argument("--provider", choices=["gemini", "anthropic", "openrouter"], default=None)
     parser.add_argument("--prompt", default="In one sentence, what was the Molotov-Ribbentrop Pact?")
     parser.add_argument("--premise", default=berlin.PREMISE_TEXT)
     parser.add_argument("--only", nargs="+", choices=STEPS, help="run just these steps")

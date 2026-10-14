@@ -36,6 +36,15 @@ both keys are set). Tiers map to `gemini-2.5-pro`, `gemini-2.5-flash` and
 `_CHEAP`. No Gemini prices are built in, so cost shows as $0 and a budget cap
 will not trip until you add prices to the JSON file below.
 
+**With OpenRouter.** Set `OPENROUTER_API_KEY` to use any hosted model. Choose
+models per tier with `OPENROUTER_MODEL_STRONG`, `_STANDARD`, `_CHEAP`. Hidden
+reasoning is off by default (`OPENROUTER_REASONING=on` enables it): it made
+calls roughly six times slower and longer with no benefit for these bounded
+tasks. Real per-call cost is taken from OpenRouter's usage report.
+
+A rejected key, or no credit, stops the run with an error instead of letting
+everyone quietly "wait".
+
 Which model each role uses is set in one place, `tinyworld/llm/router.py`, and
 can be overridden with a JSON file named by `TINYWORLD_LLM_CONFIG`.
 
@@ -47,6 +56,15 @@ python -m tinyworld.llm.smoke --prompt "Any question you like"
 python -m tinyworld.llm.smoke --only agent god
 python -m tinyworld.llm.smoke --list-models
 ```
+
+To run the whole application once on a premise and get a report on it
+(genesis, seeding, steps, god commands, a time skip, invariants,
+anachronisms, persona judging, and a replay with no model calls):
+
+```bash
+python -m tinyworld.eval.scenario --provider openrouter --ticks 2 --skip 6mo   --premise "What if India never had Jio internet in 2016? Lucknow, Uttar Pradesh."
+```
+
 
 It sends the application's real prompts (an agent deciding, the Game Master
 adjudicating, a god command, genesis reading a premise), validates each reply

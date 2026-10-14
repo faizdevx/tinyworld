@@ -96,7 +96,7 @@ def test_critic_catches_planted_contradictions():
     for expected in [
         "figures|contradiction|Anna Keller lives at unknown place 'Castle Dracula'",
         "figures|contradiction|Otto Brandt belongs to unknown faction 'Knights Templar'",
-        "figures|contradiction|Lena Vogel holds undefined resource 'plutonium'",
+        "economy|contradiction|resource 'plutonium' is held by Lena Vogel but is not defined",
         "figures|contradiction|person 'Friedrich Brandt' is defined twice",
         "geography|contradiction|'Town Hall' connects to unknown place 'Atlantis'",
         "geography|gap|the places do not form one connected map",

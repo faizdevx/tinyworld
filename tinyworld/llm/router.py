@@ -30,10 +30,21 @@ DEFAULT_TIERS = {
     "cheap": "claude-haiku-5-5",
 }
 
+# Chosen from what a new key can call: gemini-2.5-pro and 2.5-flash-lite are
+# closed to new users, and pro models have no free-tier quota. On a paid key,
+# set GEMINI_MODEL_STRONG to a pro model.
 GEMINI_TIERS = {
-    "strong": "gemini-2.5-pro",
+    "strong": "gemini-3.5-flash",
     "standard": "gemini-2.5-flash",
-    "cheap": "gemini-2.5-flash-lite",
+    "cheap": "gemini-3.5-flash-lite",
+}
+
+# Any OpenRouter model id works. These are inexpensive and follow JSON
+# instructions well; set OPENROUTER_MODEL_STRONG/_STANDARD/_CHEAP to change them.
+OPENROUTER_TIERS = {
+    "strong": "google/gemini-3.6-flash",
+    "standard": "google/gemini-3.5-flash-lite",
+    "cheap": "google/gemini-3.5-flash-lite",
 }
 
 DEFAULT_EFFORT = {"strong": "high", "standard": "medium", "cheap": "low"}
@@ -89,11 +100,24 @@ class LLMConfig:
         return cls(tiers=tiers, prices={})
 
     @classmethod
+    def openrouter(cls) -> "LLMConfig":
+        """Tiers on OpenRouter models. Costs come from OpenRouter's own usage report."""
+        tiers = {
+            tier: os.environ.get(f"OPENROUTER_MODEL_{tier.upper()}", default)
+            for tier, default in OPENROUTER_TIERS.items()
+        }
+        return cls(tiers=tiers, prices={})
+
+    @classmethod
     def load(
         cls, path: str | Path | None = None, *, provider: str = "anthropic"
     ) -> "LLMConfig":
         """Provider defaults, overridden by a JSON file (``TINYWORLD_LLM_CONFIG`` or ``path``)."""
-        config = cls.gemini() if provider == "gemini" else cls()
+        config = (
+            cls.gemini() if provider == "gemini"
+            else cls.openrouter() if provider == "openrouter"
+            else cls()
+        )
         path = path or os.environ.get("TINYWORLD_LLM_CONFIG")
         if path and Path(path).exists():
             data = json.loads(Path(path).read_text(encoding="utf-8"))

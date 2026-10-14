@@ -123,6 +123,65 @@ def test_rate_limits_are_retried_with_backoff_then_reported():
     assert len(calls) == 3 and sleeps == [1.0, 2.0]
 
 
+def test_the_servers_retry_delay_is_honoured():
+    state = {"n": 0}
+
+    def handler(http_request):
+        state["n"] += 1
+        if state["n"] == 1:
+            return httpx.Response(429, json={"error": {
+                "status": "RESOURCE_EXHAUSTED", "message": "quota",
+                "details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "23s"}],
+            }})
+        if state["n"] == 2:
+            return httpx.Response(429, json={"error": {"message": "Please retry in 7.5s."}})
+        return reply()
+
+    gemini, sleeps = client_for(handler, backoff=1.0)
+    assert run(gemini.complete(request(), "m", None)).text
+    assert sleeps == [23.0, 7.5]
+
+
+def test_requests_per_minute_are_paced():
+    now = {"t": 0.0}
+    waits = []
+
+    async def sleep(seconds):
+        waits.append(round(seconds, 2))
+        now["t"] += seconds
+
+    gemini = GeminiClient(
+        "k", http=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: reply())),
+        sleep=sleep, requests_per_minute=2, clock=lambda: now["t"],
+    )
+
+    async def burst():
+        await asyncio.gather(*(gemini.complete(request(), "m", None) for _ in range(3)))
+
+    run(burst())
+    assert waits == [60.05]  # the third waits for the first to age out
+
+
+def test_concurrency_is_capped():
+    active = {"now": 0, "peak": 0}
+
+    class Slow(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, http_request):
+            active["now"] += 1
+            active["peak"] = max(active["peak"], active["now"])
+            await asyncio.sleep(0.01)
+            active["now"] -= 1
+            return reply()
+
+    gemini = GeminiClient("k", http=httpx.AsyncClient(transport=Slow()), max_concurrent=2)
+
+    async def burst():
+        await asyncio.gather(*(gemini.complete(request(), "m", None) for _ in range(6)))
+
+    run(burst())
+    assert active["peak"] == 2
+
+
 def test_a_transient_failure_then_success():
     state = {"n": 0}
 
@@ -228,6 +287,7 @@ def test_hub_uses_gemini_models_and_reports_no_prices(clean_env):
     assert isinstance(hub.client, GeminiClient) and hub.has_model and not hub.offline
     assert hub.config.route("genesis.premise").model == "gemini-custom"
     assert hub.config.route("agent.act").model == "gemini-2.5-flash"
+    assert hub.config.route("memory.importance").model == "gemini-3.5-flash-lite"
     assert hub.config.cost("gemini-2.5-flash", 1_000_000, 1_000_000) == 0.0
 
 
@@ -275,3 +335,18 @@ def test_smoke_main_explains_a_missing_key(clean_env, capsys, tmp_path):
     clean_env.chdir(tmp_path)
     assert run(smoke.main([])) == 2
     assert "No API key found" in capsys.readouterr().out
+
+
+def test_auth_failures_are_fatal_not_retried():
+    from tinyworld.llm.types import LLMFatal
+
+    calls = []
+
+    def handler(http_request):
+        calls.append(1)
+        return httpx.Response(401, json={"error": {"status": "UNAUTHENTICATED", "message": "key expired"}})
+
+    gemini, sleeps = client_for(handler)
+    with pytest.raises(LLMFatal):
+        run(gemini.complete(request(), "m", None))
+    assert len(calls) == 1 and sleeps == []
