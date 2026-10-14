@@ -45,6 +45,16 @@ you are trying to do and why; the referee reads it.
 `plan` is your next few intended steps, in order. Send a new plan only when it changes."""
 
 
+def daypart(hour: int) -> str:
+    if hour < 5 or hour >= 22:
+        return "night"
+    if hour < 12:
+        return "morning"
+    if hour < 17:
+        return "afternoon"
+    return "evening"
+
+
 class Say(Model):
     text: str = Field(min_length=1)
     to: list[str] = Field(default_factory=list)
@@ -154,6 +164,8 @@ class Agent:
         persona: Persona,
         branch_id: str,
         last_seen_seq: int,
+        hint: str = "",
+        recent: list[str] | None = None,
     ) -> tuple[str, list[int]]:
         new = self.memory.list(
             branch_id, entity.id, kinds=EPISODIC, after_seq=last_seen_seq,
@@ -191,7 +203,7 @@ class Agent:
         lines = [
             render(entity, persona),
             "",
-            f"Now: {state.sim_time:%A %d %B %Y, %H:%M}",
+            f"Now: {state.sim_time:%A %d %B %Y, %H:%M} ({daypart(state.sim_time.hour)})",
             ctx.describe_place(state, entity.location, viewer=entity.id),
             f"You are carrying: {ctx.inventory_text(state, entity)}",
         ]
@@ -229,6 +241,17 @@ class Agent:
         if Planner.should_reconsider(plan, [m.importance for m in new]):
             lines.append("Something has changed or you have no plan: reconsider it.")
 
+        if recent:
+            lines += ["", "What you did lately (oldest first):"]
+            lines += [f"- {text}" for text in recent[-5:]]
+            if len(recent) >= 3 and len(set(recent[-3:])) == 1:
+                lines.append(
+                    "You have done the same thing several times running. Do something "
+                    "different, or have a reason to keep at it."
+                )
+        if hint:
+            lines += ["", hint]
+
         lines += ["", "What do you do now?"]
         # What prompted the decision: the weightiest of what was just learned.
         weighty = sorted(new, key=lambda m: m.importance, reverse=True)[:5]
@@ -242,12 +265,16 @@ class Agent:
         branch_id: str,
         context: CallContext,
         last_seen_seq: int,
+        hint: str = "",
+        recent: list[str] | None = None,
     ) -> Acted:
         persona = persona_of(entity)
         wait = Intent(agent=entity.id, verb=Verb.WAIT, text="unsure what to do")
         if persona is None:
             return Acted(wait, "", False, None)
-        prompt, causes = self._prompt(state, entity, persona, branch_id, last_seen_seq)
+        prompt, causes = self._prompt(
+            state, entity, persona, branch_id, last_seen_seq, hint, recent
+        )
 
         def check(decision: Decision) -> str | None:
             try:

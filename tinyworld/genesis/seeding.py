@@ -54,6 +54,15 @@ def _system(effects: list, narration: str) -> EventDraft:
     )
 
 
+_CURRENCY = {
+    "money", "cash", "coin", "coins", "mark", "marks", "reichsmark", "reichsmarks",
+    "rupee", "rupees", "inr", "dollar", "dollars", "pound", "pounds", "franc",
+    "francs", "lira", "ruble", "rubles", "rouble", "roubles", "yen", "euro",
+    "euros", "currency", "wages", "salary", "gold", "silver", "denarii", "florin",
+    "florins", "money_rupees", "cash_rupees",
+}
+
+
 def seed_drafts(bible: Bible) -> tuple[list[EventDraft], list[Finding]]:
     """Seed events for ``bible`` and notes on anything that had to be repaired."""
     notes: list[Finding] = []
@@ -230,6 +239,11 @@ def seed_drafts(bible: Bible) -> tuple[list[EventDraft], list[Finding]]:
         }
         if spec.faction and slugify(spec.faction) in factions:
             attrs["faction"] = factions[slugify(spec.faction)]
+        if spec.location:
+            start = place(spec.location, spec.name)
+            if start != home:
+                # Where a person starts the day, away from home, is where they work.
+                attrs["workplace"] = start
         inventory: dict[str, int] = {}
         for possession in spec.possessions:
             item = resource(possession.resource, "figures")
@@ -285,6 +299,14 @@ def seed_drafts(bible: Bible) -> tuple[list[EventDraft], list[Finding]]:
             value=[group.model_dump() for group in bible.culture.population],
         ),
     ]
+
+    currency = next(
+        (rid for slug, rid in resources.items() if slug in _CURRENCY), None
+    )
+    if currency is not None:
+        rule_effects.append(
+            fx.SetRule(key="wage", value={"item": currency, "per_hour": 1})
+        )
 
     stages = [
         (resource_effects, "Resources defined."),

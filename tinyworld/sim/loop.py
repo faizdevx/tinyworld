@@ -7,12 +7,13 @@ from datetime import datetime, timedelta
 
 from tinyworld.agents.agent import Acted, Agent
 from tinyworld.agents.beliefs import BeliefStore
-from tinyworld.agents.memory import Compactor, ImportanceScorer, MemoryStore, NewMemory
+from tinyworld.agents import routine as daily
+from tinyworld.agents.memory import EPISODIC, Compactor, ImportanceScorer, MemoryStore, NewMemory
 from tinyworld.agents.persona import Persona, persona_of, render
 from tinyworld.agents.planner import Planner
 from tinyworld.agents.reflection import Reflector
 from tinyworld.core import effects as fx
-from tinyworld.core.events import Event, EventDraft, Outcome
+from tinyworld.core.events import Event, EventDraft, Intent, Outcome
 from tinyworld.core.session import WorldSession
 from tinyworld.core.state import Entity, Fact, Model, WorldState
 from tinyworld.gm.adjudicator import Adjudicator
@@ -56,6 +57,20 @@ class TickResult:
     level: str = "ok"
     paused: bool = False
     promoted: list[str] = field(default_factory=list)
+    # How each deciding agent was driven this tick: routine, react or deliberate.
+    modes: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def routine(self) -> int:
+        return sum(1 for m in self.modes.values() if m == "routine")
+
+    @property
+    def reacted(self) -> int:
+        return sum(1 for m in self.modes.values() if m == "react")
+
+    @property
+    def deliberated(self) -> int:
+        return sum(1 for m in self.modes.values() if m == "deliberate")
 
 
 class Simulation:
@@ -74,8 +89,16 @@ class Simulation:
         policy: StepPolicy | None = None,
         tiers: TierPolicy | None = None,
         budget: Budget | None = None,
+        routines: bool = True,
+        salience: float = 0.5,
+        deliberate_hours: float = 12.0,
+        max_jump_minutes: int = 480,
     ) -> None:
         self.session = session
+        self.routines = routines
+        self.salience = salience
+        self.deliberate_hours = deliberate_hours
+        self.max_jump_minutes = max_jump_minutes
         self.llm = llm
         self.world_digest = world_digest
         self.step_minutes = step_minutes
@@ -134,6 +157,91 @@ class Simulation:
             (p for p in state.people() if self._acts_as(p, step, cheap) is not None),
             key=lambda p: p.id,
         )
+
+    # -- two speeds: routine, react, deliberate -------------------------
+
+    def _last_decided(self, agent_id: str) -> int:
+        """The latest point at which this agent decided anything."""
+        store, branch = self.session.store, self.session.branch_id
+        return max(self._last_act_tick(agent_id), store.last_seq_by_actor(branch, agent_id))
+
+    def _since_last_model_call(self, agent_id: str) -> timedelta | None:
+        """Simulated time since the model last decided for this agent."""
+        seq = self._last_act_tick(agent_id)
+        if seq < 0:
+            return None
+        store, branch = self.session.store, self.session.branch_id
+        found = store.event(branch, seq) if seq > 0 else None
+        then = found.sim_time if found is not None else store.initial_state(branch).sim_time
+        return self.session.state.sim_time - then
+
+    def recent_actions(self, agent_id: str, n: int = 5) -> list[str]:
+        store, branch = self.session.store, self.session.branch_id
+        events = store.events(branch, actor=agent_id, limit=n, newest_first=True)
+        return [e.narration for e in reversed(events) if e.kind in ("action", "utterance")]
+
+    def mode_of(self, entity: Entity):
+        """How this person decides now: by routine, by reaction, or afresh."""
+        state = self.session.state
+        if not self.routines:
+            return "deliberate", None
+        block = daily.current_block(state, entity)
+        if block is None:
+            return "deliberate", None
+        branch = self.session.branch_id
+        since = self._since_last_model_call(entity.id)
+        if since is None or since >= timedelta(hours=self.deliberate_hours):
+            return "deliberate", block
+        recent = self.recent_actions(entity.id, 3)
+        if len(recent) == 3 and len(set(recent)) == 1:
+            return "deliberate", block
+        fresh = self.memory.list(
+            branch, entity.id, kinds=EPISODIC,
+            after_seq=self._last_decided(entity.id), include_superseded=True,
+        )
+        if any(m.importance >= self.salience for m in fresh):
+            return "react", block
+        return "routine", block
+
+    def _routine_jump(self, step: int) -> tuple[int, dict[str, Intent]]:
+        """Lengthen the step when everyone is on routine until a later boundary.
+
+        Returns the new step and the routine intent of each person, decided at
+        the start of the jump: they carry on with what their day says for the
+        whole stretch, and the clock is moved once.
+        """
+        if not self.routines:
+            return step, {}
+        state = self.session.state
+        minds = [
+            p for p in state.people()
+            if p.location and persona_of(p) is not None and tier_of(p) < 2
+        ]
+        if not minds:
+            return step, {}
+        blocks = {}
+        for person in minds:
+            mode, block = self.mode_of(person)
+            if mode != "routine" or block is None:
+                return step, {}
+            blocks[person.id] = block
+        horizon = min(
+            [b.minutes_left(state.sim_time) for b in blocks.values()]
+            + [self.max_jump_minutes]
+        )
+        pending = self.scheduler.pending(self.session.branch_id)
+        if pending:
+            wait = int((pending[0][1] - state.sim_time).total_seconds() // 60)
+            horizon = min(horizon, max(1, wait))
+        if horizon <= step:
+            return step, {}
+        intents = {}
+        for person in minds:
+            intent = daily.routine_intent(state, person, blocks[person.id], horizon)
+            if intent is None:
+                return step, {}
+            intents[person.id] = intent
+        return horizon, intents
 
     # -- memory ---------------------------------------------------------
 
@@ -466,6 +574,9 @@ class Simulation:
             )
         else:
             step = self.policy.base_minutes if self.policy else self.step_minutes
+        jumped: dict[str, Intent] = {}
+        if step_minutes is None:
+            step, jumped = self._routine_jump(step)
         result.step_minutes = step
         if journal:
             session.store.journal_add(branch, tick_seq, "tick", {"step": step})
@@ -490,23 +601,44 @@ class Simulation:
         # 2. Everyone decides at once, from the same view of the world.
         state = session.state
         deciders = []
+        by_routine: list[Acted] = []
         for entity in self.active_agents(state, tick_seq, step=step, cheap=cheap):
-            agent = self.agent if self._acts_as(entity, step, cheap) == 0 else self.agent_tier1
+            tier = self._acts_as(entity, step, cheap)
+            agent = self.agent if tier == 0 else self.agent_tier1
+            if entity.id in jumped:
+                by_routine.append(Acted(jumped[entity.id], "routine", True, None))
+                result.modes[entity.id] = "routine"
+                continue
+            if tier == 0:
+                mode, block = self.mode_of(entity)
+            else:
+                mode, block = "deliberate", None
+            if mode == "routine" and block is not None:
+                intent = daily.routine_intent(state, entity, block, step)
+                if intent is not None:
+                    by_routine.append(Acted(intent, "routine", True, None))
+                    result.modes[entity.id] = "routine"
+                    continue
+                mode = "react"
             if agent is not None:
-                deciders.append((entity, agent))
-        acted: list[Acted] = await asyncio.gather(
+                result.modes[entity.id] = mode
+                deciders.append((entity, agent, daily.hint(state, entity, block)))
+        modelled: list[Acted] = await asyncio.gather(
             *(
                 agent.act(
                     state, entity, branch,
                     CallContext(branch, tick_seq, entity.id),
                     self._last_act_tick(entity.id),
+                    hint=hint,
+                    recent=self.recent_actions(entity.id),
                 )
-                for entity, agent in deciders
+                for entity, agent, hint in deciders
             )
         )
-        result.thoughts = {
-            entity.id: act.thought for (entity, _), act in zip(deciders, acted)
-        }
+        acted: list[Acted] = sorted(
+            by_routine + list(modelled), key=lambda a: a.intent.agent
+        )
+        result.thoughts = {a.intent.agent: a.thought for a in acted}
 
         # 3. The Game Master decides what actually happens.
         step_result = await apply_intents(
