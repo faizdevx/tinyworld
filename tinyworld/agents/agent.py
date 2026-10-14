@@ -1,6 +1,6 @@
 """One agent decision: context in, a single intent out."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pydantic import Field, JsonValue
 
@@ -87,6 +87,8 @@ class Acted:
     thought: str
     ok: bool
     trace_id: str | None
+    # Events the agent had newly learned of when it decided.
+    causes: list[int] = field(default_factory=list)
 
 
 class Agent:
@@ -120,7 +122,7 @@ class Agent:
         persona: Persona,
         branch_id: str,
         last_seen_seq: int,
-    ) -> str:
+    ) -> tuple[str, list[int]]:
         new = self.memory.list(
             branch_id, entity.id, kinds=EPISODIC, after_seq=last_seen_seq,
             include_superseded=True,
@@ -196,7 +198,10 @@ class Agent:
             lines.append("Something has changed or you have no plan: reconsider it.")
 
         lines += ["", "What do you do now?"]
-        return "\n".join(lines)
+        # What prompted the decision: the weightiest of what was just learned.
+        weighty = sorted(new, key=lambda m: m.importance, reverse=True)[:5]
+        causes = sorted({seq for m in weighty for seq in m.source_events})
+        return "\n".join(lines), causes
 
     async def act(
         self,
@@ -210,6 +215,7 @@ class Agent:
         wait = Intent(agent=entity.id, verb=Verb.WAIT, text="unsure what to do")
         if persona is None:
             return Acted(wait, "", False, None)
+        prompt, causes = self._prompt(state, entity, persona, branch_id, last_seen_seq)
 
         def check(decision: Decision) -> str | None:
             try:
@@ -228,7 +234,7 @@ class Agent:
             stable_context=(
                 "About this world:\n" + self.world_digest if self.world_digest else ""
             ),
-            user=self._prompt(state, entity, persona, branch_id, last_seen_seq),
+            user=prompt,
             context=context,
             fallback=Decision(verb=Verb.WAIT, text="unsure what to do"),
             max_tokens=1500,
@@ -240,5 +246,6 @@ class Agent:
                 branch_id, entity.id, decision.plan, state.seq, state.sim_time
             )
         return Acted(
-            to_intent(entity.id, decision), decision.thought, reply.ok, reply.trace_id
+            to_intent(entity.id, decision), decision.thought, reply.ok, reply.trace_id,
+            causes,
         )

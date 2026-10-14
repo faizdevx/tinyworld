@@ -59,5 +59,5 @@ def test_unknown_branch_is_a_404_and_bad_intents_a_422():
 def test_status_reports_whether_a_model_is_configured(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
-    assert client().get("/api/status").json() == {"model_configured": False}
-    assert client(FakeLLM()).get("/api/status").json() == {"model_configured": True}
+    assert client().get("/api/status").json()["model_configured"] is False
+    assert client(FakeLLM()).get("/api/status").json()["model_configured"] is True

@@ -21,11 +21,19 @@ async def apply_intents(
     gm: GameMaster,
     intents: list[Intent],
     context: CallContext | None = None,
+    causes: dict[str, list[int]] | None = None,
 ) -> StepResult:
-    """Resolve intents against the session's state and commit what happens."""
+    """Resolve intents against the session's state and commit what happens.
+
+    ``causes`` maps an agent to the earlier events that prompted its intent.
+    """
     context = context or CallContext(session.branch_id, session.state.seq)
     before = session.state
     resolution = await gm.resolve(before, intents, context)
+    for draft in resolution.drafts:
+        draft.causes = [
+            seq for seq in (causes or {}).get(draft.actor, []) if 0 < seq <= before.seq
+        ]
     committed = session.commit(resolution.drafts, atomic=False, observe=perceive)
 
     outcomes = list(resolution.outcomes)

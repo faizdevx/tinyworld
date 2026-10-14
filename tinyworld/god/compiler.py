@@ -1,21 +1,17 @@
 """God commands → events. The only way a god action reaches the world."""
 
-from datetime import timedelta
-
 from pydantic import Field
 
-from tinyworld.agents.persona import KnowledgeBoundary, Persona
+from tinyworld.agents.persona import AGENT_AGE, KnowledgeBoundary, Persona
 from tinyworld.core import effects as fx
 from tinyworld.core.events import EventDraft
 from tinyworld.core.ids import make_id, slugify
 from tinyworld.core.state import Entity, Fact, Model, PlaceEdge, Process, WorldState
+from tinyworld.core.time import birth_date_for
 from tinyworld.god.feasibility import Judgement, hub_place
 from tinyworld.god.parser import GodCommand
 from tinyworld.llm.structured import StructuredLLM
 from tinyworld.llm.types import CallContext
-
-# Below this age a person is part of the background, not a deciding agent.
-AGENT_AGE = 14
 
 PERSONA_SYSTEM = """You write the character sheet for a person who is being added to a \
 simulated world.
@@ -145,10 +141,9 @@ def compile_command(
         attrs = dict(command.attrs)
         if command.kind == "person":
             profile = profile or default_profile(state, command)
-            born = state.sim_time - timedelta(days=round(profile.age * 365.25))
             attrs.update(
                 age=profile.age,
-                birth_date=born.date().isoformat(),
+                birth_date=birth_date_for(state.sim_time, profile.age),
                 home=location,
                 tier=0 if profile.age >= AGENT_AGE else 2,
                 persona=profile.persona.model_dump(),

@@ -33,5 +33,14 @@ def hours_between(earlier: datetime, later: datetime) -> float:
     return (later - earlier).total_seconds() / 3600.0
 
 
+def birth_date_for(now: datetime, age: int) -> str:
+    """The birthday that makes someone exactly ``age`` today."""
+    year = max(1, now.year - age)
+    try:
+        return now.date().replace(year=year).isoformat()
+    except ValueError:  # 29 February in a year without one
+        return now.date().replace(year=year, day=28).isoformat()
+
+
 def describe(moment: datetime) -> str:
     return moment.strftime("%A %d %B %Y, %H:%M")

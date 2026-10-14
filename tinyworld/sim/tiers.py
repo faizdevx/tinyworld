@@ -5,17 +5,18 @@ ticks on the cheap model with a shorter context. Tier 2 has no individual
 cognition: factions and districts drift by simple rules.
 """
 
+import re
 import zlib
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from tinyworld.agents.persona import persona_of
+from tinyworld.agents.persona import AGENT_AGE, persona_of
 from tinyworld.core import effects as fx
 from tinyworld.core.events import Event, EventDraft
 from tinyworld.core.rng import seeded
 from tinyworld.core.state import Entity, WorldState
 from tinyworld.core.store import Store
-from tinyworld.god.compiler import AGENT_AGE
+from tinyworld.core.time import birth_date_for
 
 EPOCH = datetime(1, 1, 1)
 
@@ -110,18 +111,19 @@ def tier_draft(changes: dict[str, int], reason: str) -> EventDraft:
     )
 
 
+_HARDSHIP = re.compile(r"\b(drought|famine|shortage|epidemic|plague|siege|blockade)\b", re.I)
+
+
 def background_drift(state: WorldState, seed: str, periods: int = 1) -> EventDraft | None:
     """Statistical update of factions and organisations between LLM summaries.
 
-    Morale sags under each standing hardship and otherwise wanders; influence
-    follows morale slowly. Deliberately crude: the point is that the
-    background is not frozen while nobody is looking at it.
+    Morale is pulled toward a resting level that each standing hardship
+    lowers, with some noise; influence follows morale slowly. Deliberately
+    crude: the point is that the background is not frozen while nobody is
+    looking at it, and that it settles rather than running off to an extreme.
     """
-    hardships = sum(
-        1
-        for fact in state.active_facts()
-        if any(word in fact.text.lower() for word in ("drought", "famine", "shortage", "epidemic", "cut"))
-    )
+    hardships = sum(1 for fact in state.active_facts() if _HARDSHIP.search(fact.text))
+    resting = max(15, 55 - 12 * hardships)
     effects = []
     for entity in sorted(state.entities.values(), key=lambda e: e.id):
         if entity.kind not in ("faction", "org"):
@@ -129,15 +131,17 @@ def background_drift(state: WorldState, seed: str, periods: int = 1) -> EventDra
         rng = seeded(seed, "drift", state.seq, entity.id)
         morale = entity.attrs.get("morale")
         morale = morale if isinstance(morale, int) else 50
-        change = sum(rng.randint(-3, 3) - hardships for _ in range(periods))
-        new_morale = min(100, max(0, morale + change))
+        new_morale = morale
+        for _ in range(min(periods, 12)):
+            new_morale += round((resting - new_morale) * 0.15) + rng.randint(-3, 3)
+        new_morale = min(100, max(0, new_morale))
         if new_morale != morale:
             effects.append(fx.SetAttr(entity=entity.id, key="morale", value=new_morale))
         if entity.kind == "faction":
             influence = entity.attrs.get("influence")
             if isinstance(influence, int):
-                pull = (new_morale - 50) // 25
-                new_influence = min(100, max(0, influence + pull * periods))
+                nudge = (new_morale > 60) - (new_morale < 40)
+                new_influence = min(100, max(0, influence + nudge))
                 if new_influence != influence:
                     effects.append(
                         fx.SetAttr(entity=entity.id, key="influence", value=new_influence)
@@ -148,10 +152,6 @@ def background_drift(state: WorldState, seed: str, periods: int = 1) -> EventDra
         kind="system", actor="system", visibility="god_only",
         effects=effects, narration="Background drift.",
     )
-
-
-def birth_date_for(now: datetime, age: int) -> str:
-    return (now - timedelta(days=round(age * 365.25))).date().isoformat()
 
 
 def birth_dates_draft(state: WorldState) -> EventDraft | None:

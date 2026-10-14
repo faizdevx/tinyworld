@@ -103,7 +103,9 @@ class TimeSkip:
             clock = EventDraft(
                 kind="system", actor="system", visibility="god_only",
                 effects=[fx.AdvanceTime(minutes=period)],
-                narration=f"{label(period).capitalize()} pass.",
+                narration=f"{label(period).capitalize()} "
+                f"{'passes' if label(period).startswith('1 ') else 'pass'}. "
+                + (proposal.summary.strip() or "Nothing much changed."),
             )
             due = sim.scheduler.pending(branch, due_by=until)
             opened = session.commit([clock] + [d for _, _, d in due], atomic=False)
@@ -129,10 +131,20 @@ class TimeSkip:
                     continue
                 working = after
                 accepted.append(proposed)
+                names = [
+                    session.state.entities[p].name
+                    for p in proposed.participants
+                    if p in session.state.entities
+                ]
                 drafts.append(
                     EventDraft(
                         kind="chronicle",
                         actor="gm",
+                        # Earlier history involving the same people led here.
+                        causes=[
+                            e.seq for e in recent
+                            if any(name in e.narration for name in names)
+                        ][-5:],
                         location=proposed.location or None,
                         effects=list(proposed.effects),
                         narration=proposed.narration,

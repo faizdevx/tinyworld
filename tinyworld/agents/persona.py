@@ -5,6 +5,10 @@ from pydantic import Field
 from tinyworld.core.state import Entity, Model
 
 
+# Below this age a person is part of the background, not a deciding agent.
+AGENT_AGE = 14
+
+
 class KnowledgeBoundary(Model):
     """What a person of this time, place, class and schooling could know."""
 

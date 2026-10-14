@@ -472,7 +472,8 @@ class Simulation:
 
         # 3. The Game Master decides what actually happens.
         step_result = await apply_intents(
-            session, self.gm, [a.intent for a in acted], CallContext(branch, tick_seq)
+            session, self.gm, [a.intent for a in acted], CallContext(branch, tick_seq),
+            causes={a.intent.agent: a.causes for a in acted},
         )
         result.events += step_result.events
         result.outcomes = step_result.outcomes
