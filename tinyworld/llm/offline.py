@@ -168,11 +168,14 @@ def offline_llm(get_state: Callable[[], WorldState], seed: str = "offline") -> F
         return {"commands": [{"op": "trigger_event", "description": text + "."}]}
 
     def persona(request: LLMRequest) -> dict:
-        newborn = "newborn" in request.user or "'age': 0" in request.user
+        stated = re.search(r"^Age now: (\d+)$", request.user, re.MULTILINE)
+        newborn = stated is None and (
+            "newborn" in request.user or "'age': 0" in request.user
+        )
         name = re.search(r"^Name: (.+)$", request.user, re.MULTILINE)
         who = name.group(1) if name else "This person"
         return {
-            "age": 0 if newborn else 30,
+            "age": int(stated.group(1)) if stated else (0 if newborn else 30),
             "occupation": "" if newborn else "labourer",
             "persona": {
                 "summary": f"{who}, a newborn." if newborn else f"{who}, a newcomer finding their feet.",
@@ -188,8 +191,57 @@ def offline_llm(get_state: Callable[[], WorldState], seed: str = "offline") -> F
             "explanation": f"{who} is a new person in this world, not anyone from real history.",
         }
 
+    def chronicle(request: LLMRequest) -> dict:
+        from tinyworld.sim.chronicler import _requirements_unmet
+
+        state = get_state()
+        rng = seeded(seed, "chronicle", request.context.tick_seq)
+        events = []
+        for process in sorted(state.processes.values(), key=lambda p: p.id):
+            if process.status != "active" or _requirements_unmet(state, process):
+                continue
+            delta = round(rng.uniform(0.15, 0.4), 2)
+            effects = [{"type": "AdvanceProcess", "process_id": process.id, "delta": delta}]
+            narration = f"Work on {process.name} moved forward."
+            if process.progress + delta >= 1.0:
+                effects.append(
+                    {"type": "EndProcess", "process_id": process.id, "status": "completed"}
+                )
+                narration = f"{process.name} was completed."
+            owner = state.entities.get(process.owner)
+            events.append(
+                {
+                    "narration": narration,
+                    "participants": [owner.id] if owner and owner.kind == "person" and owner.alive else [],
+                    "effects": effects,
+                    "importance": 6,
+                }
+            )
+        minds = sorted(p.id for p in state.people() if p.attrs.get("persona"))
+        if len(minds) >= 2 and rng.random() < 0.6:
+            first, second = rng.sample(minds, 2)
+            change = rng.choice([-25, -10, 10, 25])
+            events.append(
+                {
+                    "narration": f"{state.entities[first].name} and {state.entities[second].name} "
+                    + ("fell out." if change < 0 else "grew closer."),
+                    "participants": [first, second],
+                    "effects": [
+                        {"type": "SetRelation", "source": first, "dest": second,
+                         "kind": "strained" if change < 0 else "close", "value": change},
+                    ],
+                    "importance": 4,
+                }
+            )
+        return {
+            "summary": "The seasons turned and life went on much as before.",
+            "events": events,
+        }
+
     return FakeLLM(
         {
+            "chronicler": chronicle,
+            "tier2.summary": {"text": "People are getting by and keeping their heads down."},
             "god.parse": god,
             "agent.persona": persona,
             "agent.act": act,

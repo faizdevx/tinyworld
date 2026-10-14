@@ -153,6 +153,9 @@ def compile_command(
                 tier=0 if profile.age >= AGENT_AGE else 2,
                 persona=profile.persona.model_dump(),
             )
+            if profile.age < AGENT_AGE:
+                # Marks someone who is in the background only until they grow up.
+                attrs["status"] = "child"
             if profile.occupation:
                 attrs["occupation"] = profile.occupation
             narration = (

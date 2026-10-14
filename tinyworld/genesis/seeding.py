@@ -10,6 +10,7 @@ from tinyworld.core.ids import make_id, slugify
 from tinyworld.core.state import Entity, Fact, PlaceEdge, WorldState
 from tinyworld.genesis.bible import Bible, Finding
 from tinyworld.genesis.critic import connected_components
+from tinyworld.sim.tiers import birth_date_for
 
 
 def start_time(bible: Bible) -> datetime:
@@ -224,6 +225,7 @@ def seed_drafts(bible: Bible) -> tuple[list[EventDraft], list[Finding]]:
         )
         attrs = {
             "occupation": spec.occupation, "age": spec.age, "home": home,
+            "birth_date": birth_date_for(start_time(bible), spec.age),
             "tier": 0, "persona": persona.model_dump(),
         }
         if spec.faction and slugify(spec.faction) in factions:

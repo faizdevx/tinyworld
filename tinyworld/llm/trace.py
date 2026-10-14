@@ -111,8 +111,13 @@ class ReplayLLM:
             raise LLMError(f"no recorded call for {key}|{ordinal}")
         row = rows[0]
         response = json.loads(row["response_json"])
+        # Usage is replayed too, so decisions that depend on cost repeat exactly.
         return LLMResult(
             text=response["text"],
             model=row["model"],
+            input_tokens=row["input_tokens"],
+            output_tokens=row["output_tokens"],
+            cache_read_tokens=response.get("cache_read_tokens", 0),
+            cache_write_tokens=response.get("cache_write_tokens", 0),
             refused=response.get("refused", False),
         )

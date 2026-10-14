@@ -564,4 +564,5 @@ def test_the_same_world_diverges_under_different_seeds():
 def test_simulation_without_a_model_only_advances_time():
     session = toy.build_toy()
     result = run(Simulation(session, None).tick())
-    assert len(result.events) == 1 and result.outcomes == []
+    assert {e.actor for e in result.events} == {"system"} and result.outcomes == []
+    assert session.state.sim_time == toy.START + timedelta(hours=1)
