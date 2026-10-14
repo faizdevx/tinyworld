@@ -1,6 +1,6 @@
 import { api, listen } from "./api.js";
 import { createMap } from "./map.js";
-import { action, clear, el, money, setCrumbs, shortId, tag, toast, when } from "./ui.js";
+import { action, clear, fill, el, money, setCrumbs, shortId, tag, toast, when } from "./ui.js";
 
 const FEED_LIMIT = 300;
 
@@ -127,7 +127,7 @@ export async function showWorld(view, branchId) {
     try {
       const graph = await api(`/branches/${branchId}/causes/${event.seq}`);
       const earlier = graph.nodes.filter((n) => n.seq !== event.seq);
-      clear(detail).append(
+      fill(detail, 
         earlier.length
           ? el("div", {}, el("div", { class: "muted" }, "What led to this:"),
               el("ul", { class: "dots" }, earlier.slice(-6).map((n) =>
@@ -143,7 +143,7 @@ export async function showWorld(view, branchId) {
             location.hash = `#/branch/${fork.branch_id}`;
           }, { class: "quiet" })));
     } catch (error) {
-      clear(detail).append(error.message);
+      fill(detail, error.message);
     }
   }
 
@@ -189,7 +189,7 @@ export async function showWorld(view, branchId) {
     const place = state.entities[id];
     const here = Object.values(state.entities).filter((e) => e.kind === "person" && e.location === id);
     const stored = Object.entries(place.inventory);
-    clear(inspectBody).append(
+    fill(inspectBody, 
       el("h3", {}, place.name),
       el("p", {}, place.attrs.description || ""),
       el("div", {}, el("span", { class: "muted" }, "Here: "),
@@ -214,13 +214,13 @@ export async function showWorld(view, branchId) {
     try {
       person = await api(`/branches/${branchId}/agents/${encodeURIComponent(id)}`);
     } catch (error) {
-      clear(inspectBody).append(el("p", { class: "muted" }, error.message));
+      fill(inspectBody, el("p", { class: "muted" }, error.message));
       return;
     }
     if (id !== selectedPerson) return;
     const persona = person.persona;
     const tierLabel = { 0: "decides every step", 1: "decides now and then", 2: "background" }[person.attrs.tier ?? 0];
-    clear(inspectBody).append(
+    fill(inspectBody, 
       el("div", {},
         el("h3", {}, person.name, " ", person.alive ? null : tag("dead", "bad")),
         el("div", { class: "muted small" },

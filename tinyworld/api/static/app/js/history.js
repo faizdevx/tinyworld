@@ -1,5 +1,5 @@
 import { api } from "./api.js";
-import { action, clear, download, el, money, setCrumbs, tag, toast, when } from "./ui.js";
+import { action, clear, fill, download, el, money, setCrumbs, tag, toast, when } from "./ui.js";
 
 export async function showHistory(view, branchId) {
   const branch = await api(`/branches/${branchId}`);
@@ -51,7 +51,7 @@ export async function showHistory(view, branchId) {
             el("li", {}, el("span", { class: "muted" }, `${when(e.sim_time, false)} `), e.narration)))
         : el("p", { class: "muted" }, "Nothing since the split."));
     const fate = (p) => (p ? `${p.alive ? "alive" : "dead"}, ${p.location}` : "does not exist");
-    diffBox.append(
+    fill(diffBox,
       el("p", { class: "muted" }, `The two timelines share history up to event ${diff.split_seq}.`),
       el("div", { class: "columns" }, side(branch.name, diff.a), side(other, diff.b)),
       diff.people.length
@@ -102,7 +102,7 @@ export async function showHistory(view, branchId) {
       for (const edge of incoming.get(seq) || []) walk(edge.from, level + 1, edge.why);
     })(graph.root, 0, null);
     causeBox.hidden = false;
-    clear(causeBox).append(
+    fill(causeBox, 
       el("h2", {}, "How it came about"),
       rows.length > 1
         ? el("ul", { class: "plain chain" }, rows)
@@ -161,7 +161,7 @@ export async function showHistory(view, branchId) {
       }),
       action("Check this timeline", async () => {
         const result = await api(`/branches/${branchId}/checks`);
-        clear(checkBox).append(
+        fill(checkBox, 
           el("div", {},
             result.invariants.length ? tag(`${result.invariants.length} broken`, "bad") : tag("holds", "good"),
             " Invariants: nobody acts after dying, nobody moves without a route, quantities add up, causes come first."),
@@ -177,9 +177,9 @@ export async function showHistory(view, branchId) {
             : null);
       }),
       action("Verify replay", async () => {
-        clear(checkBox).append(el("p", { class: "muted" }, "Replaying from the recording…"));
+        fill(checkBox, el("p", { class: "muted" }, "Replaying from the recording…"));
         const report = await api(`/branches/${branchId}/replay`, { method: "POST" });
-        clear(checkBox).append(
+        fill(checkBox, 
           el("div", {},
             report.identical ? tag("identical", "good") : tag("differs", "bad"),
             ` Replayed ${report.operations} recorded step(s) with no model calls: `,

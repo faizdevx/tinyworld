@@ -512,6 +512,16 @@ def create_app(hub: Hub | None = None) -> FastAPI:
 
     if (STATIC / "app").exists():
         app.mount("/app", StaticFiles(directory=STATIC / "app", html=True), name="app")
+
+    @app.middleware("http")
+    async def revalidate_app_files(request, call_next):
+        # The frontend is a set of ES modules: a browser holding some old and
+        # some new ones breaks. Make it check each file on load (cheap, by ETag).
+        response = await call_next(request)
+        if request.url.path.startswith("/app"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     return app
 
 

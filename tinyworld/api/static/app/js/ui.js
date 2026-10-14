@@ -94,3 +94,8 @@ export function download(filename, data) {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
+
+// Replace a node's children, skipping null and false the way el() does.
+export function fill(node, ...children) {
+  return append(clear(node), children);
+}

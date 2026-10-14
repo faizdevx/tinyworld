@@ -1,5 +1,5 @@
 import { api, listen } from "./api.js";
-import { action, clear, el, setCrumbs, tag, toast } from "./ui.js";
+import { action, clear, fill, el, setCrumbs, tag, toast } from "./ui.js";
 
 const SECTION_ORDER = [
   "geography", "politics", "economy", "technology", "culture", "factions", "figures", "tensions",
@@ -100,7 +100,7 @@ export async function showGenesis(view, worldId) {
   let lastStage = null;
 
   function renderProgress(genesis) {
-    clear(progress).append(el("h2", {}, "Building the world"));
+    fill(progress, el("h2", {}, "Building the world"));
     const reached = STAGES.indexOf(genesis.stage);
     progress.append(
       el("div", { class: "row" }, STAGES.slice(0, -1).map((stage, index) =>
@@ -194,7 +194,7 @@ export async function showGenesis(view, worldId) {
   async function refresh() {
     const world = await api(`/worlds/${worldId}`);
     setCrumbs([[world.premise.split("\n")[0].slice(0, 60), null]]);
-    clear(head).append(
+    fill(head, 
       el("h1", {}, world.premise.split("\n")[0]),
       world.offline
         ? el("p", { class: "muted" },
@@ -211,7 +211,7 @@ export async function showGenesis(view, worldId) {
     clear(start);
     if (ready) {
       const blocking = world.genesis.findings.filter((f) => f.blocking).length;
-      start.append(
+      fill(start,
         el("h2", {}, "Run it"),
         blocking
           ? el("p", { class: "muted" },
