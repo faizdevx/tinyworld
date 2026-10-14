@@ -1,6 +1,6 @@
 # Concepts carried from v1 into v2
 
-`WORLD/` is frozen. These are the ideas v2 ports on purpose; everything else is replaced.
+`WORLD/` was the v1 package. It was removed once v2 had these ideas; it remains in the git history.
 
 | v1 concept | v1 location | v2 home | What changes |
 |---|---|---|---|

@@ -1,194 +1,106 @@
 # TinyWorld
 
-TinyWorld is a deterministic, test-first world simulation where the world is the source of truth and NPC knowledge remains private, partial, and sometimes wrong.
+A world you describe in a sentence, researched and written up as a world bible,
+then run by LLM agents who decide for themselves. You watch, intervene as a god,
+skip years, and fork history to see what else could have happened.
 
-The project models the separation between:
+> "1941. Germany never invades the USSR. A town near Berlin."
 
-- world fact
-- intention and proposal
-- validated event resolution
-- private belief and communication
-- scientific observation without mutation
+That premise becomes a town of a dozen named people with goals, fears and
+secrets, a few thousand background inhabitants, institutions and factions,
+scarce flour and sealed Soviet grain in the goods shed. Then it runs.
 
----
-
-## Core architecture
-
-```mermaid
-flowchart TD
-    A[God intervention] --> B[Event proposal]
-    B --> C[World resolution]
-    C --> D[World state]
-    D --> E[Private NPC observation]
-    E --> F[NPC beliefs]
-    F --> G[Communication]
-    G --> H[Observatory / metrics / checkpoints]
-    C --> H
-```
-
-The permanent invariant is:
-
-- what someone intends is not what the world allows
-- what the world allows is not what happens
-- what happens is not what every NPC knows
-- communication transfers information, not objective truth
-
----
-
-## What is implemented
-
-The repository includes:
-
-- deterministic world generation and Genesis scenarios
-- intervention boundaries for God-driven mutation
-- proposal, validation, and event resolution flow
-- private NPC reality and belief filtering
-- communication as data transfer without world-truth transfer
-- read-only observatory for inspection, metrics, and checkpoints
-- a local FastAPI web app for the God Observatory
-
-### Phase status
-
-- Phase 9: Genesis — complete
-- Phase 10: God Intervention Engine — complete
-- Phase 11: Private Reality — complete
-- Phase 12: Event / Causality Engine — complete
-- Phase 13: Communication Architecture — complete
-- Phase 14: Observatory / Research Layer — complete
-- Phase 15: God MVP / Local Observatory — complete
-
----
-
-## Quick start
-
-Run the test suite:
+## Running it
 
 ```bash
-cd D:/tinyworld
-python -m pytest -q
+pip install -e ".[llm,dev]"
+python -m tinyworld.api.app
 ```
 
-Start the local web app:
+Open <http://127.0.0.1:8000>. Worlds are kept in `.tinyworld_data/worlds.sqlite`
+(set `TINYWORLD_DB` to use another file).
 
-```bash
-cd D:/tinyworld
-python -m WORLD.app
+**With a model.** Set `ANTHROPIC_API_KEY` before starting. Genesis then reads
+your premise, researches it on Wikipedia, writes and reviews the bible, and the
+agents, Game Master, god parser and chronicler all run on the model.
+
+**Without a model** the server runs an offline demo: genesis returns a prepared
+bible for the Berlin premise whatever you type, and agents follow simple rules.
+Everything else — the map, god commands in a small fixed syntax, time skips,
+forks, history — works the same. It is for trying the application, not for
+judging how interesting a world is.
+
+Which model each role uses is set in one place, `tinyworld/llm/router.py`, and
+can be overridden with a JSON file named by `TINYWORLD_LLM_CONFIG`.
+
+## What you can do
+
+- **Genesis.** Enter a premise. Watch it pass through premise, divergence,
+  research, sections, critic and digest. Read the bible, edit any section,
+  see the reviewer's findings, then start a timeline.
+- **World.** A map of places and people, a feed of what happens, an inspector
+  for each person (character sheet, what they are thinking, their plan, what
+  they believe and whether it is true, what they remember, what they cost),
+  and a box for changing the world in plain words.
+- **God commands** come back with a verdict and a reason: done, done with a
+  change, not possible, unclear, or "that is in the past" with an offer to
+  branch the timeline there.
+- **Time.** Play, pause, step, or skip days to decades. Long skips are told by
+  a chronicler period by period; everything it proposes is checked before it
+  becomes history.
+- **History.** The branch tree, a comparison of two timelines, the chronicle
+  by year with a "why?" trace for each entry, numbers including cost per
+  simulated year, an invariant check, and a replay check.
+
+## How it works
+
+The design is in [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
+In short:
+
+- **State is a fold over an event log.** Nothing changes the world except an
+  event committed through `WorldSession.commit`. Forking a branch copies
+  nothing; it just reads its parent's log up to the fork point.
+- **Models never write state.** Agents propose intents. The Game Master settles
+  what it can with rules and asks a model about the rest; either way the
+  result is a list of effects from a closed set of seventeen, applied by
+  deterministic reducers.
+- **Every model call is recorded.** A run is journaled (ticks, skips, god
+  commands, budget changes) and can be replayed from the recording with no
+  model calls, producing an identical event log.
+
+```
+tinyworld/
+  core/      ids, time, state, effects, events, reducers, store, session, branches, causes
+  llm/       client, router, structured calls, trace and replay, ledger, fake, offline, embeddings
+  gm/        verbs, rules, adjudicator, conflicts, perception, master
+  agents/    persona, memory, retrieval, beliefs, reflection, planner, agent
+  genesis/   bible, research, critic, seeding, pipeline
+  god/       parser, feasibility, compiler, channel
+  sim/       loop, step, tiers, scheduler, budget, chronicler, timeskip, schedule, replay
+  eval/      invariants, anachronism, judge, divergence, metrics
+  api/       app, hub, runner, views, static/app
 ```
 
-Then open:
-
-```text
-http://127.0.0.1:8000/
-```
-
-The browser UI talks to the real backend and exposes the world, NPCs, interventions, communication, beliefs, metrics, snapshots, and checkpoint controls without mutating the authoritative world state.
-
----
-
-## Verified project state
-
-This workspace was validated with:
+## Tests
 
 ```bash
 python -m pytest -q
 ```
 
-Result: 476 passed in 1.22s.
+Set `TINYWORLD_DEBUG=1` to check every committed event against the invariants
+as the tests run; CI does this.
 
-Focused app checks also pass:
+## Limits worth knowing
 
-```bash
-python -m pytest tests/test_phase15_app.py -q
-```
+- The agent, Game Master, chronicler and genesis prompts have been exercised
+  against scripted and rule-driven stand-ins, not judged against a real model
+  in long runs. How lively, consistent and period-true the worlds are with a
+  real model has not been measured yet; `POST /api/branches/{id}/judge` and the
+  divergence tools exist for that.
+- Research uses Wikipedia's public API. Search results are untested against
+  the live service.
+- The map is a relaxed graph drawn on a canvas, not tiles or sprites.
 
----
-
-## Example usage
-
-Inspect the world without mutating it:
-
-```python
-from WORLD.world import World
-from WORLD.Observatory import Observatory
-
-world = World(seed=42)
-observatory = Observatory()
-
-snapshot = observatory.inspect_world(world)
-print(snapshot.population)
-print(snapshot.metadata)
-```
-
-Compare reality to an NPC's private beliefs:
-
-```python
-comparisons = observatory.compare_beliefs(world)
-for item in comparisons:
-    if item.subject == "foreign_army":
-        print(item.npc_name, item.npc_value, item.world_value, item.known)
-```
-
----
-
-## Local app workflow
-
-1. Start the server with `python -m WORLD.app`
-2. Open http://127.0.0.1:8000/
-3. Use the observatory sections to inspect the live world
-4. Apply interventions from the God control panel
-5. Step the simulation and inspect evolving metrics, beliefs, and events
-6. Save and restore checkpoints for deterministic replay
-
----
-
-## Project structure
-
-```text
-D:/tinyworld/
-├── WORLD/
-│   ├── AI/
-│   ├── Buildings/
-│   ├── Communication/
-│   ├── Events/
-│   ├── Genesis/
-│   ├── Interventions/
-│   ├── NPCs/
-│   ├── Observatory/
-│   ├── Resources/
-│   ├── Simulation/
-│   ├── static/
-│   ├── app.py
-│   ├── main.py
-│   ├── world.py
-│   └── __init__.py
-├── tests/
-├── README.md
-├── pytest.ini
-├── .gitignore
-└── .tinyworld_checkpoints/
-```
-
----
-
-## Scientific principles
-
-TinyWorld is intentionally built for reproducibility and inspection:
-
-- world state is authoritative
-- NPC beliefs are filtered and private
-- communication carries information without copying objective truth
-- the observatory reads data and records metrics without mutating state
-- checkpoints preserve deterministic snapshots for restore-and-continue workflows
-
----
-
-## Contributing
-
-When changing the simulation, prefer:
-
-1. add or update a failing test
-2. fix the root cause
-3. run the relevant test file
-4. run the full suite before claiming completion
-
-This keeps TinyWorld deterministic, inspectable, and reliable.
+The previous, rule-based version (`WORLD/`) was removed after its useful ideas
+were carried over; see [docs/V1_CONCEPTS.md](docs/V1_CONCEPTS.md). It remains
+in the git history.
