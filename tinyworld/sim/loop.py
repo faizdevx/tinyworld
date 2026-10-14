@@ -201,6 +201,26 @@ class Simulation:
         )
         return sum(counts)
 
+    async def remember_events(
+        self, seqs: list[int], tick_seq: int, *, journal: bool = True
+    ) -> int:
+        """Let witnesses remember events committed outside a tick, such as a god's.
+
+        Perception is recomputed from the stored log, so a replay that repeats
+        this call produces the same memories.
+        """
+        if not seqs:
+            return 0
+        store, branch = self.session.store, self.session.branch_id
+        if journal:
+            store.journal_add(branch, self.session.state.seq, "remember", {"seqs": seqs, "tick_seq": tick_seq})
+        observations = []
+        for seq in seqs:
+            event = store.event(branch, seq)
+            if event is not None:
+                observations += perceive(event, store.state_at(branch, seq))
+        return await self.remember(observations, tick_seq)
+
     # -- promotion ------------------------------------------------------
 
     def history_of(self, entity: Entity, limit: int = 30) -> list[Event]:
@@ -257,10 +277,24 @@ class Simulation:
         return profile
 
     async def promote(
-        self, entity_ids: list[str], *, refresh: bool = False, reason: str = "drawn into events"
+        self,
+        entity_ids: list[str],
+        *,
+        refresh: bool = False,
+        reason: str = "drawn into events",
+        journal: bool = False,
     ) -> list[str]:
-        """Make background people into deciding agents, with a persona and a past."""
+        """Make background people into deciding agents, with a persona and a past.
+
+        Pass ``journal=True`` when the promotion is decided from outside the
+        tick, so that a replay repeats it.
+        """
         state = self.session.state
+        if journal and entity_ids:
+            self.session.store.journal_add(
+                self.session.branch_id, state.seq, "promote",
+                {"ids": list(entity_ids), "reason": reason},
+            )
         tick_seq = state.seq
         effects: list = []
         promoted: list[tuple[Entity, list[Event]]] = []
@@ -409,7 +443,9 @@ class Simulation:
 
     # -- the tick -------------------------------------------------------
 
-    async def tick(self, step_minutes: int | None = None) -> TickResult:
+    async def tick(
+        self, step_minutes: int | None = None, *, journal: bool = True
+    ) -> TickResult:
         """Advance the world by one step. ``step_minutes`` overrides the step policy."""
         session = self.session
         branch = session.branch_id
@@ -431,6 +467,8 @@ class Simulation:
         else:
             step = self.policy.base_minutes if self.policy else self.step_minutes
         result.step_minutes = step
+        if journal:
+            session.store.journal_add(branch, tick_seq, "tick", {"step": step})
 
         # 1. Time passes; queued events fire; the background is kept up.
         result.events += self.record_birth_dates()

@@ -18,7 +18,9 @@ from tinyworld.core.causes import cause_graph
 from tinyworld.core.events import Intent
 from tinyworld.core.store import Store, StoreError
 from tinyworld.core.time import parse_step
+from tinyworld.eval import anachronism, invariants, judge
 from tinyworld.eval.metrics import world_metrics
+from tinyworld.sim.replay import replay
 from tinyworld.fixtures import toy
 from tinyworld.god.channel import GodResult
 from tinyworld.sim.step import apply_intents
@@ -283,6 +285,10 @@ def create_app(hub: Hub | None = None) -> FastAPI:
     async def intents(branch_id: str, request: IntentsRequest) -> dict:
         runner = runner_for(branch_id)
         async with runner.lock:
+            the_hub().store.journal_add(
+                branch_id, runner.session.state.seq, "intents",
+                {"intents": [i.model_dump(mode="json") for i in request.intents]},
+            )
             result = await apply_intents(
                 runner.session, the_hub().game_master(branch_id), request.intents
             )
@@ -384,6 +390,51 @@ def create_app(hub: Hub | None = None) -> FastAPI:
     async def metrics(branch_id: str) -> dict:
         runner = runner_for(branch_id)
         return world_metrics(the_hub().store, branch_id, runner.session.state)
+
+    @app.get("/api/branches/{branch_id}/checks")
+    async def checks(branch_id: str) -> dict:
+        """Invariant violations and anachronisms in this branch's log."""
+        runner = runner_for(branch_id)
+        store = the_hub().store
+        found = anachronism.scan(store, branch_id, runner.session.state)
+        return {
+            "invariants": [str(v) for v in invariants.check_log(store, branch_id)],
+            "anachronisms": [
+                {"seq": a.seq, "term": a.term, "where": a.where, "text": a.text, "by_god": a.by_god}
+                for a in found
+            ],
+            "leaks": len(anachronism.leaks(found)),
+        }
+
+    @app.post("/api/branches/{branch_id}/replay")
+    async def verify_replay(branch_id: str) -> dict:
+        """Re-run this branch from its recording on a new branch and compare."""
+        runner = runner_for(branch_id)
+        await runner.pause()
+        async with runner.lock:
+            report = await replay(the_hub().store, branch_id, the_hub().config)
+        return report.as_dict()
+
+    @app.post("/api/branches/{branch_id}/judge")
+    async def judge_branch(branch_id: str) -> dict:
+        """Persona-consistency scores for a sample of agents. Needs a real model."""
+        runner = runner_for(branch_id)
+        hub = the_hub()
+        if hub.llm is None:
+            raise HTTPException(status_code=503, detail="Judging needs a configured model.")
+        results = await judge.judge_agents(
+            hub.llm, hub.store, branch_id, runner.session.state
+        )
+        return {
+            "summary": judge.summary(results),
+            "agents": [
+                {
+                    "agent": r.agent, "name": r.name, "samples": r.samples,
+                    "verdict": r.verdict.model_dump() if r.verdict else None,
+                }
+                for r in results
+            ],
+        }
 
     @app.get("/api/branches/{branch_id}/diff/{other_id}")
     async def diff(branch_id: str, other_id: str) -> dict:

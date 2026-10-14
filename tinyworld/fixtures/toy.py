@@ -169,9 +169,11 @@ def seed_drafts() -> list[EventDraft]:
     ]
 
 
-def build_toy(store: Store | None = None, **session_options) -> WorldSession:
+def build_toy(
+    store: Store | None = None, *, world_id: str | None = None, **session_options
+) -> WorldSession:
     store = store or Store()
-    world_id = store.create_world("Toy town, spring 1943.", START)
+    world_id = store.create_world("Toy town, spring 1943.", START, world_id=world_id)
     branch_id = store.create_branch(world_id, "main")
     session = WorldSession(store, branch_id, **session_options)
     session.commit(seed_drafts())

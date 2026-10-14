@@ -6,6 +6,7 @@ import json
 from tinyworld.core.events import Event
 from tinyworld.core.session import WorldSession
 from tinyworld.core.time import describe
+from tinyworld.eval.metrics import cost_per_simulated_year
 from tinyworld.god.channel import GodChannel, GodResult
 from tinyworld.llm import ledger
 from tinyworld.llm.structured import StructuredLLM
@@ -90,6 +91,9 @@ class BranchRunner:
             "run_cap": self.budget.run_cap,
             "agent_cap": self.budget.agent_cap,
             "level": self.budget.level(),
+            "cost_per_year": cost_per_simulated_year(
+                self.session.store, self.session.branch_id, state
+            ),
             "population": len(state.people()),
         }
 
@@ -160,8 +164,10 @@ class BranchRunner:
                     j.command.target for j in result.judgements
                     if j.command.target.startswith("person:")
                 ]
-                await self.sim.promote(targets, reason="touched by the god")
-                await self.sim.remember(self.god.last_observations, before)
+                await self.sim.promote(
+                    targets, reason="touched by the god", journal=True
+                )
+                await self.sim.remember_events(result.event_seqs, before)
             events = self.session.store.events(self.session.branch_id, after=before)
         self._announce(events)
         return result
@@ -175,4 +181,8 @@ class BranchRunner:
             self.budget.agent_cap = agent_cap if agent_cap > 0 else None
         if add:
             self.budget.raise_cap(add)
+        self.session.store.journal_add(
+            self.session.branch_id, self.session.state.seq, "budget",
+            {"run_cap": self.budget.run_cap, "agent_cap": self.budget.agent_cap},
+        )
         self.publish("status", status=self.status())

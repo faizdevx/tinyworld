@@ -73,7 +73,7 @@ class TimeSkip:
         self.sim = sim
         self.chronicler = chronicler or Chronicler(sim.llm, world_digest=sim.world_digest)
 
-    async def skip(self, minutes: int) -> SkipResult:
+    async def skip(self, minutes: int, *, journal: bool = True) -> SkipResult:
         """Advance the world by ``minutes``, chronicling what happened on the way.
 
         Stops early, with the reason in ``stopped``, when the budget runs out.
@@ -82,6 +82,9 @@ class TimeSkip:
         session = sim.session
         branch = session.branch_id
         result = SkipResult(requested_minutes=minutes)
+        plan(minutes)  # rejects a non-positive skip before anything is recorded
+        if journal:
+            session.store.journal_add(branch, session.state.seq, "skip", {"minutes": minutes})
         result.events += sim.record_birth_dates()
 
         for period in plan(minutes):

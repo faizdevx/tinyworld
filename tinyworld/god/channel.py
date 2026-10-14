@@ -41,7 +41,9 @@ class GodChannel:
         # to whoever keeps agents' memories.
         self.last_observations: list[Observation] = []
 
-    async def submit(self, session: WorldSession, text: str) -> GodResult:
+    async def submit(
+        self, session: WorldSession, text: str, *, journal: bool = True
+    ) -> GodResult:
         """Parse, judge and, when feasible, apply what the god said."""
         if self.parser is None:
             return GodResult(
@@ -49,6 +51,10 @@ class GodChannel:
                 explanation="No model is configured to read free-text commands.",
             )
         context = CallContext(session.branch_id, session.state.seq)
+        if journal:
+            session.store.journal_add(
+                session.branch_id, session.state.seq, "god", {"text": text}
+            )
         parsed: Parsed = await self.parser.parse(session.state, text, context)
         if parsed.question or not parsed.commands:
             return GodResult(
@@ -56,7 +62,7 @@ class GodChannel:
                 explanation="This needs clarifying before anything is changed.",
                 question=parsed.question or "What exactly should happen?",
             )
-        return await self.apply(session, text, parsed.commands)
+        return await self.apply(session, text, parsed.commands, journal=False)
 
     def _judge_all(self, session: WorldSession, commands: list[GodCommand]) -> list[Judgement]:
         pending: set[str] = set()
@@ -74,10 +80,20 @@ class GodChannel:
         return judgements
 
     async def apply(
-        self, session: WorldSession, text: str, commands: list[GodCommand]
+        self,
+        session: WorldSession,
+        text: str,
+        commands: list[GodCommand],
+        *,
+        journal: bool = True,
     ) -> GodResult:
         """Judge and apply already-parsed commands as one all-or-nothing request."""
         self.last_observations = []
+        if journal:
+            session.store.journal_add(
+                session.branch_id, session.state.seq, "god_apply",
+                {"text": text, "commands": [c.model_dump(mode="json") for c in commands]},
+            )
         judgements = self._judge_all(session, commands)
         verdict = overall(judgements)
         result = GodResult(

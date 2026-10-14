@@ -157,9 +157,8 @@ class Hub:
         return self._runners[branch_id]
 
     def game_master(self, branch_id: str, world_digest: str = "") -> GameMaster:
-        adjudicator = (
-            Adjudicator(self.llm, world_digest=world_digest) if self.llm else None
-        )
+        llm = self.llm_for(self.session(branch_id))
+        adjudicator = Adjudicator(llm, world_digest=world_digest) if llm else None
         world_id = self.store.branch(branch_id)["world_id"]
         return GameMaster(adjudicator, seed=world_id)
 

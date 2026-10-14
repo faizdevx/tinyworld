@@ -128,6 +128,7 @@ export async function showHistory(view, branchId) {
 
   // -- numbers ------------------------------------------------------------
   const population = metrics.population;
+  const checkBox = el("div", { class: "stack" });
   const stats = el("div", { class: "panel stack" },
     el("h2", {}, "Numbers"),
     el("dl", { class: "kv" },
@@ -157,7 +158,35 @@ export async function showHistory(view, branchId) {
     el("div", { class: "row" },
       action("Export this timeline", async () => {
         download(`tinyworld-${branch.name}.json`, await api(`/branches/${branchId}/export`));
-      })));
+      }),
+      action("Check this timeline", async () => {
+        const result = await api(`/branches/${branchId}/checks`);
+        clear(checkBox).append(
+          el("div", {},
+            result.invariants.length ? tag(`${result.invariants.length} broken`, "bad") : tag("holds", "good"),
+            " Invariants: nobody acts after dying, nobody moves without a route, quantities add up, causes come first."),
+          result.invariants.length
+            ? el("ul", { class: "dots small" }, result.invariants.slice(0, 20).map((v) => el("li", {}, v)))
+            : null,
+          el("div", {},
+            result.leaks ? tag(`${result.leaks} found`, "warn") : tag("none", "good"),
+            " Things said or made that this world does not have yet."),
+          result.anachronisms.length
+            ? el("ul", { class: "dots small" }, result.anachronisms.slice(0, 20).map((a) =>
+                el("li", {}, `“${a.term}” ${a.where}: ${a.text}`, a.by_god ? [" ", tag("your doing", "god")] : null)))
+            : null);
+      }),
+      action("Verify replay", async () => {
+        clear(checkBox).append(el("p", { class: "muted" }, "Replaying from the recording…"));
+        const report = await api(`/branches/${branchId}/replay`, { method: "POST" });
+        clear(checkBox).append(
+          el("div", {},
+            report.identical ? tag("identical", "good") : tag("differs", "bad"),
+            ` Replayed ${report.operations} recorded step(s) with no model calls: `,
+            `${report.replayed_events} events against ${report.recorded_events} recorded.`),
+          report.identical ? null : el("p", { class: "small" }, report.first_difference));
+      })),
+    checkBox);
 
   view.append(el("div", { class: "page stack" }, tree, causeBox, el("div", { class: "columns" }, chroniclePanel, stats)));
 }

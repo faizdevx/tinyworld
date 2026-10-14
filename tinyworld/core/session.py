@@ -1,5 +1,6 @@
 """The single write path for a branch."""
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -13,6 +14,10 @@ from tinyworld.core.store import Store
 
 class CommitError(RuntimeError):
     pass
+
+
+class InvariantError(RuntimeError):
+    """A committed event broke an invariant. Raised only in debug mode."""
 
 
 @dataclass
@@ -36,11 +41,17 @@ class WorldSession:
         *,
         registry: AttrRegistry = REGISTRY,
         snapshot_every: int = 200,
+        debug: bool | None = None,
     ) -> None:
         self.store = store
         self.branch_id = branch_id
         self.registry = registry
         self.snapshot_every = snapshot_every
+        # In debug mode every committed event is checked against the
+        # invariants in tinyworld.eval.invariants, and a violation aborts.
+        self.debug = (
+            bool(os.environ.get("TINYWORLD_DEBUG")) if debug is None else debug
+        )
         self.state: WorldState = store.state_at(branch_id, registry=registry)
 
     @property
@@ -76,7 +87,14 @@ class WorldSession:
             try:
                 if any(not 0 < cause < event.seq for cause in event.causes):
                     raise EffectError("an event can only be caused by earlier events")
+                before = working.model_copy(deep=True) if self.debug else None
                 apply_event_in_place(working, event, self.registry)
+                if before is not None:
+                    from tinyworld.eval.invariants import check_event
+
+                    violations = check_event(before, event, working)
+                    if violations:
+                        raise InvariantError("; ".join(str(v) for v in violations))
             except EffectError as exc:
                 if atomic:
                     raise CommitError(str(exc)) from exc
@@ -102,4 +120,5 @@ class WorldSession:
             branch_id,
             registry=self.registry,
             snapshot_every=self.snapshot_every,
+            debug=self.debug,
         )

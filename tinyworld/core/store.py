@@ -136,6 +136,14 @@ CREATE TABLE IF NOT EXISTS scheduled (
     due_time TEXT NOT NULL,
     draft_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS journal (
+    branch_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    seq_before INTEGER NOT NULL,
+    op TEXT NOT NULL,
+    args_json TEXT NOT NULL,
+    PRIMARY KEY (branch_id, ordinal)
+);
 CREATE TABLE IF NOT EXISTS scheduled_done (
     branch_id TEXT NOT NULL,
     scheduled_id TEXT NOT NULL,
@@ -389,6 +397,27 @@ class Store:
             params + [when.isoformat()],
         )[0]
         return row["head"] or 0
+
+    # -- journal --------------------------------------------------------
+
+    def journal_add(self, branch_id: str, seq_before: int, op: str, args: dict) -> None:
+        """Record something that drove this branch, so the run can be replayed."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT COALESCE(MAX(ordinal), -1) + 1 AS next FROM journal WHERE branch_id=?",
+                (branch_id,),
+            ).fetchone()
+            self._db.execute(
+                "INSERT INTO journal VALUES (?,?,?,?,?)",
+                (branch_id, row["next"], seq_before, op, json.dumps(args)),
+            )
+            self._db.commit()
+
+    def journal(self, branch_id: str) -> list[sqlite3.Row]:
+        """This branch's own driving operations, in order."""
+        return self.query(
+            "SELECT * FROM journal WHERE branch_id=? ORDER BY ordinal", (branch_id,)
+        )
 
     # -- snapshots and state --------------------------------------------
 
