@@ -1,94 +1,106 @@
 import { api, listen } from "./api.js";
 import { createMap } from "./map.js";
-import { action, clear, fill, el, money, setCrumbs, shortId, tag, toast, when } from "./ui.js";
+import { action, clear, fill, el, money, setCrumbs, shortId, toast, when } from "./ui.js";
 
-const FEED_LIMIT = 300;
+const FEED_LIMIT = 400;
+// Ordinary routine lines. They are in the log; the feed hides them by default.
+const QUIET = /( sleeps| rests| waits| works at .+)\.$/;
+
+function daypart(hour) {
+  if (hour < 5 || hour >= 22) return "night";
+  if (hour < 12) return "morning";
+  if (hour < 17) return "afternoon";
+  return "evening";
+}
+
+function initials(name) {
+  return name.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
+}
+
+function knowledgeList(value) {
+  if (Array.isArray(value)) return value.map((v) => (typeof v === "string" ? v : v.name || v.id || JSON.stringify(v)));
+  if (value && typeof value === "object") return Object.keys(value);
+  return [];
+}
 
 export async function showWorld(view, branchId) {
   const branch = await api(`/branches/${branchId}`);
   const world = await api(`/worlds/${branch.world_id}`);
-  setCrumbs([
-    [world.premise.split("\n")[0].slice(0, 50), `#/world/${world.id}`],
-    [branch.name, null],
-  ]);
+  setCrumbs([[world.premise.split("\n")[0].slice(0, 48), `#/world/${world.id}`], [branch.name, null]]);
 
   let status = branch.status;
   let state = await api(`/branches/${branchId}/state`);
   let selectedPerson = null;
-  let selectedEvent = null;
   let lastSeq = 0;
+  let lastDay = null;
   let stateTimer = null;
+  let tab = "now";
   const nameOf = (id) => (state.entities[id] ? state.entities[id].name : id === "god" ? "God" : shortId(id));
 
   // -- top bar ------------------------------------------------------------
   const date = el("span", { class: "date" });
-  const playButton = action("Play", async () => {
-    await api(`/branches/${branchId}/run`, {
-      method: "POST", body: { action: status.running ? "pause" : "play", delay: Number(speed.value) },
-    });
-  }, { class: "primary" });
+  const part = el("span", { class: "part" });
   const speed = el("select", { "aria-label": "Speed" },
     el("option", { value: "2" }, "slow"),
     el("option", { value: "0.8", selected: true }, "normal"),
     el("option", { value: "0.1" }, "fast"));
+  const playButton = action("▶", async () => {
+    await api(`/branches/${branchId}/run`, {
+      method: "POST", body: { action: status.running ? "pause" : "play", delay: Number(speed.value) },
+    });
+  }, { class: "primary icon", title: "Play / pause" });
   speed.addEventListener("change", async () => {
     if (!status.running) return;
     await api(`/branches/${branchId}/run`, { method: "POST", body: { action: "play", delay: Number(speed.value) } });
   });
-  const skipSpan = el("input", { class: "short", value: "1mo", "aria-label": "How far to skip", title: "e.g. 3d, 2w, 6mo, 20y" });
-  const cost = el("span", { class: "small nowrap" });
-  const meter = el("div", { class: "meter", title: "Share of the budget spent" }, el("i", {}));
-  const capInput = el("input", { class: "short", type: "number", min: "0", step: "0.5", placeholder: "cap $", "aria-label": "Budget cap in dollars" });
+  const skipSpan = el("input", { class: "short", value: "1mo", "aria-label": "Skip ahead", title: "3d, 2w, 6mo, 20y" });
+  const cost = el("span", { class: "cost" });
+  const meter = el("div", { class: "meter", title: "Budget used" }, el("i", {}));
   const busy = el("span", { class: "small muted" });
+  const capInput = el("input", { class: "short", type: "number", min: "0", step: "0.5", placeholder: "$ cap", "aria-label": "Budget cap" });
 
-  const bar = el("div", { class: "panel bar" },
-    date,
-    el("div", { class: "row" },
-      playButton,
-      action("Step", () => api(`/branches/${branchId}/run`, { method: "POST", body: { action: "step" } })),
-      speed),
-    el("div", { class: "row" },
-      skipSpan,
-      action("Skip", async () => {
-        const result = await api(`/branches/${branchId}/skip`, { method: "POST", body: { span: skipSpan.value } });
-        const dropped = result.rejected.length ? ` ${result.rejected.length} proposed event(s) were ruled out.` : "";
-        toast(result.complete
-          ? `Skipped ${skipSpan.value} in ${result.periods} step(s).${dropped}`
-          : `Stopped early: ${result.stopped}. Raise the budget to continue.`);
-        await loadFeed(true);
-      })),
-    el("div", { class: "row" },
-      cost, meter, capInput,
-      action("Set cap", async () => {
-        await api(`/branches/${branchId}/budget`, { method: "POST", body: { run_cap: Number(capInput.value) || 0 } });
-      })),
+  capInput.addEventListener("change", () =>
+    api(`/branches/${branchId}/budget`, { method: "POST", body: { run_cap: Number(capInput.value) || 0 } })
+      .then(() => toast("Cap set")).catch((e) => toast(e.message)));
+
+  const topbar = el("div", { class: "topbar" },
+    el("div", { class: "when" }, date, part),
+    playButton,
+    action("Step", () => api(`/branches/${branchId}/run`, { method: "POST", body: { action: "step" } }), { class: "ghost", title: "One step" }),
+    speed,
+    skipSpan,
+    action("Skip", async () => {
+      const result = await api(`/branches/${branchId}/skip`, { method: "POST", body: { span: skipSpan.value } });
+      toast(result.complete ? `Skipped ${skipSpan.value}.` : `Stopped early: ${result.stopped}`);
+      await loadFeed(true);
+    }, { class: "ghost" }),
     busy,
     el("span", { class: "grow" }),
-    action("Fork here", async () => {
-      const name = prompt("Name for the new timeline", "what-if");
+    cost, meter, capInput,
+    action("Fork", async () => {
+      const name = prompt("Name this timeline", "what-if");
       if (!name) return;
       const fork = await api(`/branches/${branchId}/fork`, { method: "POST", body: { name } });
       location.hash = `#/branch/${fork.branch_id}`;
-    }),
-    el("a", { class: "button", href: `#/branch/${branchId}/history` }, "History"),
-    el("a", { class: "button", href: `#/world/${world.id}` }, "Bible"));
+    }, { class: "ghost", title: "Branch the timeline here" }),
+    el("a", { class: "button ghost", href: `#/branch/${branchId}/history` }, "History"),
+    el("a", { class: "button ghost", href: `#/world/${world.id}` }, "World"));
 
   function renderStatus() {
-    date.textContent = status.sim_time_text;
-    playButton.textContent = status.running ? "Pause" : "Play";
-    busy.textContent = status.busy || (status.level === "pause" ? "Paused: budget spent" : "");
-    cost.textContent = status.run_cap
-      ? `${money(status.cost)} / ${money(status.run_cap)}`
-      : `${money(status.cost)}${status.offline ? " est." : ""}`;
+    const stamp = status.sim_time || state.sim_time || "";
+    date.textContent = when(stamp, false);
+    const hour = Number((/T(\d\d):/.exec(stamp) || [])[1]);
+    part.textContent = Number.isNaN(hour) ? "" : `${String(hour).padStart(2, "0")}:${stamp.slice(14, 16)} · ${daypart(hour)}`;
+    playButton.textContent = status.running ? "❚❚" : "▶";
+    busy.textContent = status.busy || (status.level === "pause" ? "paused: budget spent" : "");
+    cost.textContent = status.run_cap ? `${money(status.cost)} / ${money(status.run_cap)}` : money(status.cost);
     meter.className = `meter ${status.level}`;
-    meter.firstChild.style.width = status.run_cap
-      ? `${Math.min(100, (status.cost / status.run_cap) * 100)}%` : "0%";
+    meter.firstChild.style.width = status.run_cap ? `${Math.min(100, (status.cost / status.run_cap) * 100)}%` : "0%";
   }
 
   // -- map ----------------------------------------------------------------
-  const canvas = el("canvas", { class: "mapcanvas", "aria-label": "Map of the world" });
-  const mapPanel = el("div", { class: "panel map" }, canvas,
-    el("span", { class: "maphint small muted" }, "Dashed paths cannot be seen across. Squares are closed rooms."));
+  const canvas = el("canvas", { class: "mapcanvas", "aria-label": "Map" });
+  const mapPanel = el("div", { class: "panel map" }, canvas);
   const map = createMap(canvas, {
     onSelect(id) {
       const entity = state.entities[id];
@@ -97,20 +109,63 @@ export async function showWorld(view, branchId) {
     },
   });
 
+  // -- side: tabs ---------------------------------------------------------
+  const tabNow = el("button", { type: "button" }, "Now");
+  const tabPeople = el("button", { type: "button" }, "People");
+  const tabChange = el("button", { type: "button" }, "Change");
+  const tabs = el("div", { class: "tabs", role: "tablist" }, tabNow, tabPeople, tabChange);
+  const pane = el("div", { class: "pane" });
+  const sidePanel = el("div", { class: "panel side" }, tabs, pane);
+
+  const feedList = el("ul", { class: "plain feed" });
+  const peopleList = el("ul", { class: "plain people" });
+  const godOut = el("div", {});
+  const godText = el("textarea", { rows: 2, placeholder: "Say what changes…", "aria-label": "Change the world" });
+  const godBox = el("div", { class: "stack" },
+    el("div", { class: "god-input" }, godText,
+      action("Send", async () => {
+        const text = godText.value.trim();
+        if (!text) return;
+        const result = await api(`/branches/${branchId}/god`, { method: "POST", body: { text } });
+        renderVerdict(result);
+        if (result.verdict === "apply" || result.verdict === "apply_adjusted") godText.value = "";
+      }, { class: "primary" })),
+    godOut);
+
+  function showTab(name) {
+    tab = name;
+    selectedPerson = null;
+    map.select(null);
+    for (const [button, key] of [[tabNow, "now"], [tabPeople, "people"], [tabChange, "change"]]) {
+      button.setAttribute("aria-selected", String(key === name));
+    }
+    fill(pane, name === "now" ? [el("div", { class: "row" }, quietToggle), feedList] : name === "people" ? peopleList : godBox);
+    if (name === "now") pane.scrollTop = pane.scrollHeight;
+    if (name === "people") renderPeople();
+  }
+  tabNow.addEventListener("click", () => showTab("now"));
+  tabPeople.addEventListener("click", () => showTab("people"));
+  tabChange.addEventListener("click", () => showTab("change"));
+
   // -- feed ---------------------------------------------------------------
-  const feedList = el("ul", { class: "plain" });
-  const feedPanel = el("div", { class: "panel feed" },
-    el("h2", {}, "What is happening"), el("div", { class: "scroll" }, feedList));
+  let showQuiet = false;
+  const quietToggle = el("button", { type: "button", class: "ghost small" });
+  quietToggle.addEventListener("click", () => {
+    showQuiet = !showQuiet;
+    feedList.classList.toggle("show-quiet", showQuiet);
+    updateQuiet();
+  });
+  function updateQuiet() {
+    const n = feedList.querySelectorAll("li.quiet").length;
+    quietToggle.textContent = showQuiet ? "Hide routine" : `Show routine (${n})`;
+    quietToggle.hidden = n === 0;
+  }
 
   function feedItem(event) {
-    const item = el("li", { class: `kind-${event.kind}`, "data-seq": event.seq },
-      el("div", { class: "meta" },
-        el("span", {}, when(event.sim_time)),
-        event.actor.startsWith("person:") ? el("span", {}, nameOf(event.actor)) : null,
-        event.kind === "god" ? tag("god", "god") : null,
-        event.kind === "chronicle" ? tag("chronicle") : null,
-        event.location ? el("span", {}, `at ${nameOf(event.location)}`) : null),
-      el("div", { class: "text" }, event.narration));
+    const time = event.sim_time.slice(11, 16);
+    const item = el("li", { class: `kind-${event.kind}${QUIET.test(event.narration) ? " quiet" : ""}`, "data-seq": event.seq },
+      el("span", { class: "t" }, time),
+      el("span", { class: "text" }, event.narration));
     item.addEventListener("click", () => toggleEvent(event, item));
     return item;
   }
@@ -118,94 +173,119 @@ export async function showWorld(view, branchId) {
   async function toggleEvent(event, item) {
     const open = item.querySelector(".detail");
     for (const node of feedList.querySelectorAll(".detail")) node.remove();
-    for (const node of feedList.querySelectorAll(".selected")) node.classList.remove("selected");
-    if (open) { selectedEvent = null; return; }
-    selectedEvent = event.seq;
-    item.classList.add("selected");
-    const detail = el("div", { class: "detail small stack" }, "Tracing…");
+    if (open) return;
+    const detail = el("div", { class: "detail small stack" }, "…");
     item.append(detail);
     try {
       const graph = await api(`/branches/${branchId}/causes/${event.seq}`);
-      const earlier = graph.nodes.filter((n) => n.seq !== event.seq);
-      fill(detail, 
+      const earlier = graph.nodes.filter((n) => n.seq !== event.seq).slice(-5);
+      fill(detail,
         earlier.length
-          ? el("div", {}, el("div", { class: "muted" }, "What led to this:"),
-              el("ul", { class: "dots" }, earlier.slice(-6).map((n) =>
-                el("li", {}, `${when(n.sim_time, false)}: ${n.narration}`))))
-          : el("div", { class: "muted" }, "Nothing recorded as leading to this."),
-        el("div", { class: "row" },
-          action("Fork from just before this", async () => {
-            const name = prompt("Name for the new timeline", "what-if");
-            if (!name) return;
-            const fork = await api(`/branches/${branchId}/fork`, {
-              method: "POST", body: { name, at_seq: event.seq - 1 },
-            });
-            location.hash = `#/branch/${fork.branch_id}`;
-          }, { class: "quiet" })));
+          ? el("div", {}, el("div", { class: "muted" }, "Because"),
+              el("ul", { class: "dots" }, earlier.map((n) => el("li", {}, n.narration))))
+          : el("div", { class: "muted" }, "No recorded cause."),
+        action("Branch from just before this", async () => {
+          const name = prompt("Name this timeline", "what-if");
+          if (!name) return;
+          const fork = await api(`/branches/${branchId}/fork`, { method: "POST", body: { name, at_seq: event.seq - 1 } });
+          location.hash = `#/branch/${fork.branch_id}`;
+        }, { class: "quiet" }));
     } catch (error) {
       fill(detail, error.message);
     }
   }
 
   function addEvents(events) {
+    const stick = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 80;
     for (const event of events) {
       if (event.seq <= lastSeq) continue;
       lastSeq = event.seq;
-      // Housekeeping is not news; a skipped stretch of time is.
       const skipped = event.effects.some((effect) => effect.type === "AdvanceTime");
       if (!event.narration || (event.actor === "system" && !skipped)) continue;
-      feedList.prepend(feedItem(event));
+      const day = event.sim_time.slice(0, 10);
+      if (day !== lastDay) {
+        feedList.append(el("li", { class: "day" }, when(event.sim_time, false)));
+        lastDay = day;
+      }
+      feedList.append(feedItem(event));
     }
-    while (feedList.children.length > FEED_LIMIT) feedList.lastChild.remove();
+    while (feedList.children.length > FEED_LIMIT) feedList.firstChild.remove();
+    updateQuiet();
+    if (tab === "now" && stick) pane.scrollTop = pane.scrollHeight;
   }
 
   async function loadFeed(reset = false) {
-    if (reset) { clear(feedList); lastSeq = 0; }
+    if (reset) { clear(feedList); lastSeq = 0; lastDay = null; }
     const events = await api(`/branches/${branchId}/events?newest=true&limit=${FEED_LIMIT}`);
     addEvents(events.reverse());
   }
 
-  // -- inspector ----------------------------------------------------------
-  const personSelect = el("select", { "aria-label": "Person" });
-  const inspectBody = el("div", { class: "scroll stack" });
-  const inspectPanel = el("div", { class: "panel inspect" },
-    el("div", { class: "row" }, el("h2", { class: "grow" }, "Who is who"), personSelect), inspectBody);
-  personSelect.addEventListener("change", () => selectPerson(personSelect.value));
-
+  // -- people -------------------------------------------------------------
   function renderPeople() {
+    if (tab !== "people" || selectedPerson) return;
     const people = Object.values(state.entities)
       .filter((e) => e.kind === "person")
       .sort((a, b) => a.name.localeCompare(b.name));
-    personSelect.replaceChildren(
-      el("option", { value: "" }, "Choose someone…"),
-      ...people.map((p) => el("option", { value: p.id, selected: p.id === selectedPerson },
-        `${p.name}${p.alive ? "" : " (dead)"}`)));
+    fill(peopleList, ...people.map((p) => {
+      const here = state.entities[p.location];
+      const row = el("li", {},
+        el("span", { class: "avatar" }, initials(p.name)),
+        el("span", { class: "grow" },
+          el("div", { class: "name" }, p.name, p.alive ? "" : " †"),
+          el("div", { class: "where" },
+            [p.attrs.occupation, here ? here.name : ""].filter(Boolean).join(" · "))));
+      row.addEventListener("click", () => selectPerson(p.id));
+      return row;
+    }));
   }
 
   function showPlace(id) {
     selectedPerson = null;
     map.select(id);
-    renderPeople();
     const place = state.entities[id];
     const here = Object.values(state.entities).filter((e) => e.kind === "person" && e.location === id);
     const stored = Object.entries(place.inventory);
-    fill(inspectBody, 
-      el("h3", {}, place.name),
-      el("p", {}, place.attrs.description || ""),
-      el("div", {}, el("span", { class: "muted" }, "Here: "),
-        here.length ? here.map((p, i) => [i ? ", " : "",
-          el("button", { class: "quiet", type: "button", onclick: () => selectPerson(p.id) }, p.name)])
-          : "nobody"),
-      stored.length ? el("div", {}, el("span", { class: "muted" }, "Stored: "),
-        stored.map(([item, n]) => `${n} ${nameOf(item)}`).join(", ")) : null);
+    tab = "place";
+    for (const button of [tabNow, tabPeople, tabChange]) button.setAttribute("aria-selected", "false");
+    fill(pane,
+      el("div", { class: "person stack" },
+        el("h3", {}, place.name),
+        place.attrs.description ? el("p", { class: "line" }, place.attrs.description) : null,
+        el("div", { class: "block" }, el("h2", {}, "Here"),
+          here.length
+            ? el("div", { class: "relchips" }, here.map((p) =>
+                el("button", { type: "button", onclick: () => selectPerson(p.id) }, p.name)))
+            : el("span", { class: "muted" }, "Nobody")),
+        stored.length
+          ? el("div", { class: "block" }, el("h2", {}, "Stored"),
+              stored.map(([item, n]) => `${n} ${nameOf(item)}`).join(", "))
+          : null));
   }
 
   async function selectPerson(id) {
     selectedPerson = id || null;
     map.select(selectedPerson);
-    renderPeople();
-    if (!selectedPerson) { clear(inspectBody); return; }
+    if (!selectedPerson) return;
+    tab = "person";
+    for (const button of [tabNow, tabPeople, tabChange]) button.setAttribute("aria-selected", "false");
     await renderPerson();
+  }
+
+  const show = (value) => {
+    if (typeof value === "string" && state.entities[value]) return state.entities[value].name;
+    if (typeof value === "boolean") return value ? "yes" : "no";
+    return typeof value === "object" ? JSON.stringify(value) : String(value);
+  };
+  function claim(subject, predicate, value) {
+    const who = nameOf(subject);
+    if (predicate === "location") return `${who} is at ${show(value)}`;
+    if (predicate === "alive") return value ? `${who} is alive` : `${who} is dead`;
+    return `${who} ${predicate}: ${show(value)}`;
+  }
+
+  function block(title, ...children) {
+    const kids = children.flat().filter((c) => c !== null && c !== false && c !== undefined);
+    return kids.length ? el("div", { class: "block" }, el("h2", {}, title), kids) : null;
   }
 
   async function renderPerson() {
@@ -214,95 +294,74 @@ export async function showWorld(view, branchId) {
     try {
       person = await api(`/branches/${branchId}/agents/${encodeURIComponent(id)}`);
     } catch (error) {
-      fill(inspectBody, el("p", { class: "muted" }, error.message));
+      fill(pane, el("p", { class: "muted" }, error.message));
       return;
     }
     if (id !== selectedPerson) return;
     const persona = person.persona;
-    const tierLabel = { 0: "decides every step", 1: "decides now and then", 2: "background" }[person.attrs.tier ?? 0];
-    fill(inspectBody, 
-      el("div", {},
-        el("h3", {}, person.name, " ", person.alive ? null : tag("dead", "bad")),
-        el("div", { class: "muted small" },
-          [person.attrs.age !== undefined ? `${person.attrs.age}` : null, person.attrs.occupation,
-            `at ${person.location_name}`, tierLabel, `cost ${money(person.cost)}`].filter(Boolean).join(" · "))),
-      persona ? el("p", {}, persona.summary) : el("p", { class: "muted" }, "No character sheet: part of the background."),
-      person.thought ? el("p", {}, el("span", { class: "muted" }, "Thinking: "), person.thought) : null,
-      persona && persona.goals.length
-        ? el("div", {}, el("span", { class: "muted" }, "Wants: "), persona.goals.join("; ")) : null,
-      persona && persona.fears.length
-        ? el("div", {}, el("span", { class: "muted" }, "Fears: "), persona.fears.join("; ")) : null,
-      persona && persona.secrets.length
-        ? el("div", {}, el("span", { class: "muted" }, "Secret: "), persona.secrets.join("; ")) : null,
-      person.plan.length
-        ? el("div", {}, el("h2", {}, "Plan"), el("ol", { class: "dots" }, person.plan.map((s) => el("li", {}, s)))) : null,
-      el("div", {},
-        el("h2", {}, "Believes"),
-        person.beliefs.length
-          ? el("ul", { class: "plain" }, person.beliefs.map((b) =>
-              el("li", { class: "belief" },
-                b.correct === true ? tag("right", "good") : b.correct === false ? tag("wrong", "bad") : tag("unknown"),
-                el("span", { class: "grow" },
-                  `${nameOf(b.subject)} ${b.predicate}: ${JSON.stringify(b.believed)}`,
-                  b.correct === false ? el("span", { class: "muted" }, ` (actually ${JSON.stringify(b.actual)})`) : null,
-                  el("span", { class: "muted small" },
-                    ` — ${b.source_name ? `heard from ${b.source_name}` : b.origin}, ${Math.round(b.confidence * 100)}% sure`)))))
-          : el("p", { class: "muted" }, "Nothing in particular yet.")),
-      el("div", {},
-        el("h2", {}, `Remembers (${person.memories.count})`),
-        person.memories.recent.length
-          ? el("ul", { class: "plain" }, person.memories.recent.slice(0, 8).map((m) =>
-              el("li", { class: "memory" },
-                el("span", { class: "imp small", title: "importance" }, m.importance.toFixed(1)),
-                el("span", {}, m.text, m.kind === "reflection" ? [" ", tag("reflection")] : null))))
-          : el("p", { class: "muted" }, "No memories yet.")),
-      person.relations.length
-        ? el("div", {}, el("h2", {}, "Relations"),
-            el("ul", { class: "plain" }, person.relations.map((r) =>
-              el("li", {}, el("button", { class: "quiet", type: "button", onclick: () => selectPerson(r.other) }, r.name),
-                r.theirs ? ` ${r.theirs.kind} (${r.theirs.value > 0 ? "+" : ""}${r.theirs.value})` : ""))))
-        : null,
-      person.inventory.length
-        ? el("div", {}, el("span", { class: "muted" }, "Carrying: "),
-            person.inventory.map((i) => `${i.quantity} ${i.name}`).join(", "))
-        : null);
+    const promises = Object.values(state.commitments || {})
+      .filter((c) => c.status === "open" && (c.by === id || c.to === id));
+    const known = knowledgeList(person.attrs.knowledge);
+    const sure = (b) => (b.correct === false ? "bad" : b.correct === true ? "good" : "");
+    const back = el("button", { class: "ghost", type: "button", onclick: () => showTab("people") }, "← People");
+
+    fill(pane,
+      el("div", { class: "person" },
+        back,
+        el("h3", { style: "margin-top:8px" }, person.name, person.alive ? "" : " †"),
+        el("div", { class: "line" },
+          [person.attrs.occupation, person.attrs.age !== undefined ? `${person.attrs.age}` : null,
+            person.location_name].filter(Boolean).join(" · ")),
+        person.thought && person.thought !== "routine"
+          ? el("p", { class: "say", style: "margin-top:10px" }, `“${person.thought}”`)
+          : person.thought === "routine"
+            ? el("p", { class: "muted small", style: "margin-top:10px" }, "On their usual day.") : null,
+        persona ? el("p", { style: "margin-top:10px" }, persona.summary) : null,
+        block("Wants", persona && persona.goals.length ? el("ul", { class: "dots" }, persona.goals.map((g) => el("li", {}, g))) : null),
+        block("Plan", person.plan.length ? el("ol", { class: "dots" }, person.plan.map((s) => el("li", {}, s))) : null),
+        block("Promises", promises.length
+          ? el("ul", { class: "dots" }, promises.map((c) =>
+              el("li", {}, c.by === id ? `to ${nameOf(c.to)}: ` : `${nameOf(c.by)} to them: `, c.text)))
+          : null),
+        block("Knows how", known.length ? el("div", { class: "relchips" }, known.slice(0, 10).map((k) => el("span", { class: "chip" }, shortId(k)))) : null),
+        block("Believes", person.beliefs.length
+          ? el("ul", { class: "plain" }, person.beliefs.slice(0, 5).map((b) =>
+              el("li", { class: "row", style: "flex-wrap:nowrap;gap:8px;align-items:baseline" },
+                el("span", { class: `dot ${sure(b)}`, title: b.correct === false ? "wrong" : b.correct === true ? "right" : "unchecked" }),
+                el("span", {}, claim(b.subject, b.predicate, b.believed),
+                  b.correct === false ? el("span", { class: "muted" }, ` (really ${show(b.actual)})`) : null))))
+          : null),
+        block("Remembers", person.memories.recent.length
+          ? el("ul", { class: "plain" }, person.memories.recent.slice(0, 4).map((m) => el("li", {}, m.text)))
+          : null),
+        block("Knows", person.relations.length
+          ? el("div", { class: "relchips" }, person.relations.map((r) => {
+              const value = r.theirs ? r.theirs.value : 0;
+              return el("button", {
+                type: "button", class: value > 15 ? "pos" : value < -15 ? "neg" : "",
+                title: r.theirs ? `${r.theirs.kind} (${value})` : "",
+                onclick: () => selectPerson(r.other),
+              }, r.name);
+            }))
+          : null),
+        block("Carrying", person.inventory.length ? person.inventory.map((i) => `${i.quantity} ${i.name}`).join(", ") : null)));
   }
 
-  // -- god console --------------------------------------------------------
-  const godText = el("textarea", { rows: 3, placeholder: "Make a drought hit the region next summer…", "aria-label": "Command the world" });
-  const godOut = el("div", { class: "scroll stack" });
-  const godPanel = el("div", { class: "panel godbox stack" },
-    el("h2", {}, "Change the world"),
-    godText,
-    el("div", { class: "row" },
-      action("Send", async () => {
-        const text = godText.value.trim();
-        if (!text) return;
-        const result = await api(`/branches/${branchId}/god`, { method: "POST", body: { text } });
-        renderVerdict(result);
-        if (result.verdict === "apply" || result.verdict === "apply_adjusted") godText.value = "";
-      }, { class: "primary" }),
-      status.offline
-        ? el("span", { class: "muted small" }, "Offline: try “kill NAME”, “move NAME to PLACE”, “NAME is born at PLACE”, “skip 3d”, or any sentence as an event.")
-        : null),
-    godOut);
-
+  // -- change the world ---------------------------------------------------
   const VERDICTS = {
-    apply: "Done", apply_adjusted: "Done, with a change", reject: "Not possible",
+    apply: "Done", apply_adjusted: "Done, adjusted", reject: "Not possible",
     needs_fork: "That is in the past", question: "Unclear",
   };
 
   function renderVerdict(result) {
-    const box = el("div", { class: `verdict ${result.verdict} stack` },
-      el("div", {}, el("strong", {}, VERDICTS[result.verdict] || result.verdict), el("span", { class: "muted" }, ` — “${result.text}”`)),
-      el("div", {}, result.question || result.explanation),
-      result.scheduled.length ? el("div", { class: "muted small" }, `${result.scheduled.length} event(s) queued.`) : null);
+    const box = el("div", { class: `verdict ${result.verdict}` },
+      el("strong", {}, VERDICTS[result.verdict] || result.verdict),
+      el("div", {}, result.question || result.explanation));
     if (result.verdict === "needs_fork") {
-      box.append(action("Branch the timeline there and apply", async () => {
+      box.append(action("Branch there and apply", async () => {
         const forked = await api(`/branches/${branchId}/god/fork`, { method: "POST", body: result });
-        toast(forked.result.explanation || "Applied on a new timeline.");
         location.hash = `#/branch/${forked.branch_id}`;
-      }));
+      }, { class: "quiet" }));
     }
     godOut.prepend(box);
   }
@@ -311,6 +370,7 @@ export async function showWorld(view, branchId) {
   async function reloadState() {
     state = await api(`/branches/${branchId}/state`);
     map.update(state);
+    renderStatus();
     renderPeople();
     if (selectedPerson) await renderPerson();
   }
@@ -320,19 +380,18 @@ export async function showWorld(view, branchId) {
     stateTimer = setTimeout(() => reloadState().catch((e) => toast(e.message)), 150);
   }
 
-  view.append(el("div", { class: "world" }, bar, mapPanel, feedPanel, inspectPanel, godPanel));
+  view.append(el("div", { class: "world" }, topbar, el("div", { class: "stage" }, mapPanel, sidePanel)));
   renderStatus();
   map.update(state);
-  renderPeople();
   await loadFeed();
+  showTab("now");
 
   const stop = listen(`/ws/branches/${branchId}`, (message) => {
     if (message.status) { status = message.status; renderStatus(); }
     if (message.type === "events") { addEvents(message.events); scheduleReload(); }
-    if (message.type === "paused") toast("Paused: the budget is spent. Raise the cap to go on.");
+    if (message.type === "paused") toast("Budget spent. Raise the cap to go on.");
     if (message.type === "error") toast(message.message);
   }, () => {
-    // After a reconnect, catch up on anything missed while the socket was down.
     api(`/branches/${branchId}/events?after=${lastSeq}`).then((events) => {
       if (events.length) { addEvents(events); scheduleReload(); }
     }).catch(() => {});

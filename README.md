@@ -10,6 +10,50 @@ That premise becomes a town of a dozen named people with goals, fears and
 secrets, a few thousand background inhabitants, institutions and factions,
 scarce flour and sealed Soviet grain in the goods shed. Then it runs.
 
+## What changed in v3
+
+People now live a day instead of being asked what to do every hour.
+
+- **Routines.** Anyone with a home and a workplace sleeps at night, gets ready in
+  the morning, and works in the day, by rule, with no model call. Work is paid.
+  Free hours, and anything important that happens, go back to the model.
+- **Long quiet steps.** When everyone is on routine the clock jumps to the next
+  boundary (the end of a shift, the morning) in one step, and the shift is
+  paid for all of it.
+- **Scenes.** A line said to someone is answered inside the same step, for up to
+  four turns. Tone changes how they regard each other.
+- **Promises.** A promise made in a scene becomes a commitment with a due time. It
+  is kept or broken when it falls due, trust moves, and both people remember it.
+- **A run report.** `python -m tinyworld.eval.report --db worlds.sqlite` shows what
+  the agents did: the mix of actions, waiting and repetition, why attempts
+  failed, calls per simulated day, promises kept and broken.
+- **A quieter interface.** Describe a world, watch it on the map, open a person,
+  change something. Routine lines are hidden from the feed until you ask.
+
+<p>
+<img src="docs/images/v3-home.jpg" width="49%" alt="Home: one box to describe a world">
+<img src="docs/images/v3-world.jpg" width="49%" alt="A running world: map and what is happening">
+</p>
+<p>
+<img src="docs/images/v3-person.jpg" width="49%" alt="A person: wants, plan, what they believe">
+<img src="docs/images/v3-change.jpg" width="49%" alt="Changing the world in a sentence">
+</p>
+
+These screenshots are the **offline demo**: the Berlin bible with scripted
+agents, not a real model. They show the interface and the mechanics. They are not
+evidence that a model produces interesting lives; that still has to be shown on a
+live run (see [Results so far](#results-so-far)).
+
+What the report said about that offline run (39 simulated hours, 10 people):
+waiting 5%, repeating 0%, 1,853 model calls, of which memory upkeep
+(importance scoring, reflection, summaries) was about two thirds and agent
+decisions under a third. Of 10 promises made, 1 was kept and 8 broken, mostly
+because the routine pulled people elsewhere. Both are known problems, not
+solved ones.
+
+Knowledge, projects and persona change are the next stage; the plan is in
+[docs/V3_PLAN.md](docs/V3_PLAN.md).
+
 ## Running it
 
 ```bash
@@ -31,8 +75,8 @@ forks, history — works the same. It is for trying the application, not for
 judging how interesting a world is.
 
 **With Gemini.** Set `GEMINI_API_KEY` instead (or `TINYWORLD_PROVIDER=gemini` if
-both keys are set). Tiers map to `gemini-2.5-pro`, `gemini-2.5-flash` and
-`gemini-2.5-flash-lite`; change them with `GEMINI_MODEL_STRONG`, `_STANDARD`,
+both keys are set). Tiers map to `gemini-3.5-flash`, `gemini-2.5-flash` and
+`gemini-3.5-flash-lite`; change them with `GEMINI_MODEL_STRONG`, `_STANDARD`,
 `_CHEAP`. No Gemini prices are built in, so cost shows as $0 and a budget cap
 will not trip until you add prices to the JSON file below.
 

@@ -89,23 +89,26 @@ const RENDER = {
 };
 
 export async function showGenesis(view, worldId) {
-  const head = el("div", { class: "panel stack" });
-  const progress = el("div", { class: "panel" });
+  const head = el("div", { class: "stack" });
+  const progress = el("div", { class: "stack" });
   const questions = el("div", {});
   const findings = el("div", {});
-  const bibleBox = el("div", { class: "stack" });
-  const start = el("div", { class: "panel stack" });
-  view.append(el("div", { class: "page stack" }, head, progress, questions, findings, bibleBox, start));
+  const bibleBox = el("div", {});
+  const start = el("div", { class: "stack" });
+  view.append(el("div", { class: "page stack" }, head, progress, questions, findings, start, bibleBox));
 
   let lastStage = null;
 
   function renderProgress(genesis) {
-    fill(progress, el("h2", {}, "Building the world"));
+    fill(progress);
     const reached = STAGES.indexOf(genesis.stage);
+    if (genesis.stage === "done" && !genesis.running) return;
     progress.append(
-      el("div", { class: "row" }, STAGES.slice(0, -1).map((stage, index) =>
-        tag(stage, genesis.stage === "done" || index < reached ? "good"
-          : index === reached && genesis.running ? "warn" : ""))),
+      el("div", { class: "steps" }, STAGES.slice(0, -1).map((stage, index) =>
+        el("span", {
+          class: `step ${genesis.stage === "done" || index < reached ? "done"
+            : index === reached && genesis.running ? "now" : ""}`,
+        }, stage))),
     );
     if (genesis.error) progress.append(el("p", { class: "tag bad" }, genesis.error));
     const recent = genesis.log.slice(-6);
@@ -120,10 +123,10 @@ export async function showGenesis(view, worldId) {
     if (!genesis.questions.length) return;
     const answer = el("textarea", { "aria-label": "Your answer" });
     questions.append(el("div", { class: "panel stack" },
-      el("h2", {}, "The premise needs pinning down"),
+      el("h2", {}, "A question first"),
       list(genesis.questions),
       answer,
-      action("Answer and continue", async () => {
+      action("Continue", async () => {
         if (!answer.value.trim()) return;
         await api(`/worlds/${worldId}/genesis/answer`, { method: "POST", body: { text: answer.value } });
       }, { class: "primary" })));
@@ -133,11 +136,10 @@ export async function showGenesis(view, worldId) {
     clear(findings);
     if (!items.length) return;
     findings.append(el("div", { class: "panel" },
-      el("h2", {}, "Reviewer's findings"),
+      el("h2", {}, "Issues"),
       el("ul", { class: "plain" }, items.map((f) =>
         el("li", { class: "finding" },
-          tag(f.blocking ? "must fix" : "minor", f.blocking ? "bad" : ""),
-          tag(f.kind.replaceAll("_", " ")),
+          el("span", { class: `dot ${f.blocking ? "bad" : "warn"}` }),
           el("span", { class: "muted small nowrap" }, f.section),
           el("span", {}, f.text))))));
   }
@@ -171,13 +173,13 @@ export async function showGenesis(view, worldId) {
             toast(`Saved as version ${saved.version}.`);
             await refresh();
           }, { class: "primary" }),
-          el("span", { class: "muted small" }, "Saving keeps the previous version and re-checks the bible.")));
+          el("span", { class: "muted small" }, "Keeps the previous version.")));
       bibleBox.append(el("details", { class: "section", open: name === "figures" },
         el("summary", {}, name[0].toUpperCase() + name.slice(1)),
         el("div", { class: "body stack" },
           RENDER[name](section),
           el("div", {}, el("button", { class: "quiet", type: "button",
-            onclick: () => { editBox.hidden = !editBox.hidden; } }, "Edit as JSON")),
+            onclick: () => { editBox.hidden = !editBox.hidden; } }, "Edit")),
           editBox)));
     }
     const sources = await api(`/worlds/${worldId}/sources`);
@@ -196,10 +198,7 @@ export async function showGenesis(view, worldId) {
     setCrumbs([[world.premise.split("\n")[0].slice(0, 60), null]]);
     fill(head, 
       el("h1", {}, world.premise.split("\n")[0]),
-      world.offline
-        ? el("p", { class: "muted" },
-            "Offline demo: this bible is a prepared example for the Berlin premise, not generated from your text.")
-        : null);
+      world.offline ? el("span", { class: "chip warn" }, "prepared example") : null);
     renderProgress(world.genesis);
     renderQuestions(world.genesis);
     renderFindings(world.genesis.findings);
@@ -212,13 +211,9 @@ export async function showGenesis(view, worldId) {
     if (ready) {
       const blocking = world.genesis.findings.filter((f) => f.blocking).length;
       fill(start,
-        el("h2", {}, "Run it"),
-        blocking
-          ? el("p", { class: "muted" },
-              `${blocking} finding${blocking === 1 ? "" : "s"} marked must-fix. You can still start; seeding repairs what it can and tells you.`)
-          : null,
+        blocking ? el("p", { class: "muted small" }, `${blocking} open issue${blocking === 1 ? "" : "s"}`) : null,
         el("div", { class: "row" },
-          action(world.branches.length ? "Start a fresh timeline" : "Start world", async () => {
+          action(world.branches.length ? "New timeline" : "Start", async () => {
             const seeded = await api(`/worlds/${worldId}/seed`, {
               method: "POST", body: { name: world.branches.length ? `run ${world.branches.length + 1}` : "main" },
             });

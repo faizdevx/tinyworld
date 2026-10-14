@@ -42,7 +42,7 @@ async function showMode() {
   try {
     const status = await api("/status");
     document.getElementById("mode").textContent = status.offline
-      ? "Offline demo: no model configured. Agents follow simple rules."
+      ? "offline demo"
       : "";
   } catch (error) {
     toast(error.message);
