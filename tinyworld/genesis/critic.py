@@ -122,7 +122,10 @@ def check(bible: Bible) -> list[Finding]:
             if _slug(relation.to) not in figure_slugs:
                 add("gap", "figures", f"{figure.name} has a relation to unknown person {relation.to!r}", blocking=False)
         if not figure.goals:
-            add("gap", "figures", f"{figure.name} has no goals", blocking=False)
+            add(
+                "gap", "figures",
+                f"{figure.name} has no goals; give them at least one concrete want",
+            )
 
     for name in _duplicates([r.name for r in bible.economy.resources]):
         add("contradiction", "economy", f"resource {name!r} is defined twice")

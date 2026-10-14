@@ -371,3 +371,16 @@ def test_agents_run_in_the_seeded_world_without_changes():
     assert "You live in: Falkenrode" in acts[0].user
     assert sum(len(r.events) for r in results) > 40
     assert seeding.check_world(session.state) == []
+
+
+def test_blank_goals_are_dropped_and_then_flagged():
+    figures = copy.deepcopy(berlin.FIGURES)
+    figures["figures"][0]["goals"] = ["", "  "]
+    figures["figures"][0]["traits"] = ["blunt", ""]
+    bible = fixture_bible(figures=figures)
+    anna = bible.figures.figures[0]
+    assert anna.goals == [] and anna.traits == ["blunt"]
+    findings = [f for f in critic.check(bible) if f.blocking]
+    assert [f.text for f in findings] == [
+        "Anna Keller has no goals; give them at least one concrete want"
+    ]

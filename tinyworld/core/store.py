@@ -144,6 +144,12 @@ CREATE TABLE IF NOT EXISTS journal (
     args_json TEXT NOT NULL,
     PRIMARY KEY (branch_id, ordinal)
 );
+CREATE TABLE IF NOT EXISTS meta (
+    world_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (world_id, key)
+);
 CREATE TABLE IF NOT EXISTS scheduled_done (
     branch_id TEXT NOT NULL,
     scheduled_id TEXT NOT NULL,
@@ -397,6 +403,13 @@ class Store:
             params + [when.isoformat()],
         )[0]
         return row["head"] or 0
+
+    def meta_set(self, world_id: str, key: str, value: str) -> None:
+        self.execute("INSERT OR REPLACE INTO meta VALUES (?,?,?)", (world_id, key, value))
+
+    def meta_get(self, world_id: str, key: str) -> str | None:
+        rows = self.query("SELECT value FROM meta WHERE world_id=? AND key=?", (world_id, key))
+        return rows[0]["value"] if rows else None
 
     # -- journal --------------------------------------------------------
 

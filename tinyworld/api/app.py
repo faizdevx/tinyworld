@@ -168,7 +168,7 @@ def create_app(hub: Hub | None = None) -> FastAPI:
             "bible_version": row["bible_version"],
             "genesis": hub.genesis_job(world_id).view(),
             "branches": [branch_json(b) for b in branches.tree(hub.store, world_id)],
-            "offline": hub.offline,
+            "offline": hub.store.meta_get(world_id, "canned_genesis") == "1",
         }
 
     @app.post("/api/worlds/{world_id}/genesis/answer")

@@ -128,6 +128,111 @@ python -m pytest -q
 Set `TINYWORLD_DEBUG=1` to check every committed event against the invariants
 as the tests run; CI does this.
 
+## Results so far
+
+One whole-application run on a premise unrelated to the built-in example:
+
+> **"What if India never had Jio internet in 2016? The setting is Lucknow, a
+> city in Uttar Pradesh."**
+
+Run with OpenRouter, model `qwen/qwen3.7-flash` for every tier, hidden
+reasoning off, research from Wikipedia. Command:
+
+```bash
+python -m tinyworld.eval.scenario --provider openrouter --ticks 2 --skip 6mo --judge 3   --premise "What if India never had Jio internet in 2016? The setting is Lucknow, a city in Uttar Pradesh."
+```
+
+### What worked
+
+| Stage | Result |
+|---|---|
+| Premise | Placed in Lucknow, 15 September 2016; divergence recognised as "Jio does not launch" |
+| Divergence | Three orders of consequence with confidences, e.g. smartphone growth stalls (90%), Ola/Uber stay luxury (80%), UPI lags and cash dominates (75%) |
+| Research | 5 Wikipedia sources fetched and turned into cited notes |
+| Bible | 12 places, 13 people, 6 factions, 5 institutions, 7 resources, 5 tensions |
+| Review | 4 findings, 1 blocking, after capped redraft rounds; all shown, none hidden |
+| Seeding | 13 people, 12 places, 16 links; one repair, which it reported |
+| Invariants | Held over all 63 events |
+| Replay | 54 of 54 events reproduced from the recording with **0** calls to the provider |
+| Cost | Genesis: 28 calls, 277,524 tokens in / 49,530 out; 604 s wall time |
+
+![The bible's divergence analysis and the reviewer's findings](docs/images/lucknow-bible.jpg)
+
+*The generated bible: what changes, and what the reviewer flagged.*
+
+![Generated key figures](docs/images/lucknow-figures.jpg)
+
+*The people it wrote. Note the empty "Wants / Fears / Secret" lines: see below.*
+
+![The seeded world on the map](docs/images/lucknow-world.jpg)
+
+*The seeded city after a six-month skip: places as a graph, people on them, a
+feed of what happened.*
+
+![History and numbers](docs/images/lucknow-history.jpg)
+
+*Chronicle by year, group morale and influence, and the resources in the world.*
+
+### What did not work, and why
+
+This run is **not** a demonstration that the agents behave well on a real
+model. Read the following before the screenshots above.
+
+- **The simulation part was not exercised live.** The OpenRouter key expired
+  part-way through (HTTP 401). Every call after genesis failed, and at the time
+  a failed call silently became "wait". Result: every person waited in both
+  steps, both god commands came back "needs clarifying", and persona judging
+  produced nothing. Those lines in the run's report are not evidence about the
+  model.
+- **The people had no goals.** The model returned empty strings for every
+  person's goals, fears and secrets, and nothing noticed. That is visible in
+  the figures screenshot. Even with a working key those agents would have had
+  nothing to want.
+- **The chronicler's proposals were mostly thrown away.** Of six periods only
+  one produced an entry (the "Data Tax" paragraph in the history screenshot).
+  Five proposed events were ruled out because the model named people as
+  `karan_verma` rather than `person:karan_verma`.
+- **Real people appeared.** The bible includes real, named individuals
+  (executives, a police commissioner) as characters, which is a questionable
+  thing for a simulation to invent speech and secrets for. Nothing in the
+  premise asked for this, and nothing stops it yet.
+- **The seeded start was thin.** 12 of 13 people lived in 12 places and the
+  review still reported people "not among the key figures" as faction leaders.
+
+### Fixed afterwards
+
+Each of these was found by this run and now has a test:
+
+- A rejected key or missing credit raises an error instead of becoming "wait".
+- Blank list entries are dropped, and a person with no goals is a blocking
+  review finding that triggers a redraft.
+- The chronicler's names and bare slugs are resolved to ids, as agents' are.
+- "Undefined resource" findings are sent to the section that can fix them.
+- A world made from the built-in example says so; other worlds no longer carry
+  that banner.
+
+### Checked separately, on real models
+
+Short runs of the real prompts, one model call per step
+(`python -m tinyworld.llm.smoke`), each validated against the real schema:
+
+| Model | prompt | agents (3 people) | Game Master | god command | premise parse |
+|---|---|---|---|---|---|
+| `google/gemini-3.5-flash-lite` via OpenRouter | pass | pass, 0 repairs | pass | pass | pass |
+| `qwen/qwen3.7-flash` via OpenRouter | pass | pass, 13 s | pass | pass | pass |
+| `gemini-2.5-flash` (Gemini API) | pass | 2 of 3 people fell back | pass | pass | pass |
+
+The Gemini fallbacks were the same missing-prefix bug as above, fixed since.
+Turning reasoning off on `qwen/qwen3.7-flash` took the agent step from 75 s and
+4,392 output tokens to 13 s and 593.
+
+### Still to show
+
+A complete run on a real model with a working key: agents acting from goals,
+a god command, a skip with chronicled events, persona judging, and a measured
+spread across several runs of the same premise. Rerun the command above to
+produce that report.
+
 ## Limits worth knowing
 
 - The agent, Game Master, chronicler and genesis prompts have been exercised

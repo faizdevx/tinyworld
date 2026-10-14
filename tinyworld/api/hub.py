@@ -231,6 +231,10 @@ class Hub:
 
     async def run_genesis(self, world_id: str, stage: str | None = None) -> None:
         job = self.genesis_job(world_id)
+        if self.llm is None:
+            # Remembered with the world: its bible is a prepared example, and
+            # must keep saying so after the server is restarted with a key.
+            self.store.meta_set(world_id, "canned_genesis", "1")
         job.running, job.error, job.questions = True, "", []
         job.publish()
         try:
