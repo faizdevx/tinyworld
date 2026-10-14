@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS branches (
     parent_id TEXT REFERENCES branches(id),
     fork_seq INTEGER,
     name TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    start_time TEXT
 );
 CREATE TABLE IF NOT EXISTS events (
     branch_id TEXT NOT NULL,
@@ -216,13 +217,19 @@ class Store:
         parent_id: str | None = None,
         fork_seq: int | None = None,
         branch_id: str | None = None,
+        start_time: datetime | None = None,
     ) -> str:
+        """Create a branch. A root branch may fix its own starting time."""
         self.world(world_id)
         branch_id = branch_id or new_id()
         self.execute(
-            "INSERT INTO branches (id, world_id, parent_id, fork_seq, name, created_at)"
-            " VALUES (?,?,?,?,?,?)",
-            (branch_id, world_id, parent_id, fork_seq, name, datetime.now().isoformat()),
+            "INSERT INTO branches (id, world_id, parent_id, fork_seq, name, created_at,"
+            " start_time) VALUES (?,?,?,?,?,?,?)",
+            (
+                branch_id, world_id, parent_id, fork_seq, name,
+                datetime.now().isoformat(),
+                start_time.isoformat() if start_time else None,
+            ),
         )
         return branch_id
 
@@ -392,8 +399,9 @@ class Store:
         return WorldState.model_validate_json(rows[0]["state_json"]) if rows else None
 
     def initial_state(self, branch_id: str) -> WorldState:
-        world = self.world(self.branch(branch_id)["world_id"])
-        return WorldState(sim_time=datetime.fromisoformat(world["start_time"]))
+        root = self.branch(self.lineage(branch_id)[0][0])
+        start = root["start_time"] or self.world(root["world_id"])["start_time"]
+        return WorldState(sim_time=datetime.fromisoformat(start))
 
     def state_at(
         self,
