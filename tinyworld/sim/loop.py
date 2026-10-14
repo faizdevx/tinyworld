@@ -3,6 +3,7 @@ witnesses remember."""
 
 import asyncio
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 from tinyworld.agents.agent import Acted, Agent
 from tinyworld.agents.beliefs import BeliefStore
@@ -20,6 +21,7 @@ from tinyworld.gm.perception import Observation, limit_attention
 from tinyworld.llm.embed import Embedder, HashEmbedder
 from tinyworld.llm.structured import StructuredLLM
 from tinyworld.llm.types import CallContext
+from tinyworld.sim.schedule import Scheduler
 from tinyworld.sim.step import apply_intents
 
 
@@ -56,6 +58,7 @@ class Simulation:
         self.memory = MemoryStore(store, embedder or HashEmbedder())
         self.beliefs = BeliefStore(store)
         self.planner = Planner(self.memory)
+        self.scheduler = Scheduler(store)
         self.scorer = ImportanceScorer(llm)
         self.reflector = Reflector(
             llm, self.memory, self.beliefs, threshold=reflect_threshold
@@ -76,7 +79,10 @@ class Simulation:
     def active_agents(self, state: WorldState, tick_seq: int) -> list[Entity]:
         """People who decide for themselves this tick."""
         return sorted(
-            (p for p in state.people() if p.location and persona_of(p) is not None),
+            (
+                p for p in state.people()
+                if p.location and p.attrs.get("tier", 0) == 0 and persona_of(p) is not None
+            ),
             key=lambda p: p.id,
         )
 
@@ -149,11 +155,17 @@ class Simulation:
             kind="system", actor="system", visibility="god_only",
             effects=[fx.AdvanceTime(minutes=self.step_minutes)],
         )
+        now = session.state.sim_time + timedelta(minutes=self.step_minutes)
+        due = self.scheduler.pending(branch, due_by=now)
         opening = session.commit(
-            [clock] + self.system_drafts(session.state, tick_seq),
+            [clock]
+            + [draft for _, _, draft in due]
+            + self.system_drafts(session.state, tick_seq),
             atomic=False,
             observe=self._perceive,
         )
+        # A queued event fires once, even if the world could no longer take it.
+        self.scheduler.mark_done(branch, [item[0] for item in due], session.state.seq)
         result.events += opening.events
         observations = [o for batch in opening.observed for o in batch]
 

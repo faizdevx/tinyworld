@@ -177,7 +177,8 @@ def test_time_advances_and_is_stamped_on_later_events():
             draft(fx.MoveEntity(entity=toy.ANNA, to=toy.SQUARE), actor=toy.ANNA),
         ]
     )
-    assert result.events[0].sim_time == toy.START
+    # An event carries the time at which it is over.
+    assert result.events[0].sim_time == datetime(1943, 3, 14, 9, 30)
     assert result.events[1].sim_time == datetime(1943, 3, 14, 9, 30)
     assert session.state.sim_time == datetime(1943, 3, 14, 9, 30)
 

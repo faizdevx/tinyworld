@@ -213,6 +213,12 @@ def apply_effect(
         raise EffectError(f"unsupported effect: {type(effect).__name__}")
 
 
+def end_time(state: WorldState, effects: Iterable):
+    """The time at which an event with these effects is over."""
+    minutes = sum(e.minutes for e in effects if isinstance(e, fx.AdvanceTime))
+    return state.sim_time + timedelta(minutes=minutes)
+
+
 def apply_effects(
     state: WorldState,
     effects: Iterable,
@@ -233,11 +239,12 @@ def apply_event_in_place(
     """Apply a stored event. Only for replaying a log already known to be valid."""
     if event.seq != state.seq + 1:
         raise EffectError(f"event {event.seq} does not follow state {state.seq}")
-    if event.sim_time < state.sim_time:
-        raise EffectError("event time is earlier than state time")
-    state.sim_time = event.sim_time
     for effect in event.effects:
         apply_effect(state, effect, registry)
+    # An event is stamped with the time at which it is over, so "everything
+    # up to time T" is a prefix of the log.
+    if event.sim_time != state.sim_time:
+        raise EffectError("event time does not match the state it produces")
     state.seq = event.seq
 
 

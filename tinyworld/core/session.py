@@ -6,7 +6,7 @@ from typing import Any
 
 from tinyworld.core.events import Event, EventDraft
 from tinyworld.core.registry import REGISTRY, AttrRegistry
-from tinyworld.core.reducers import EffectError, apply_event_in_place
+from tinyworld.core.reducers import EffectError, apply_event_in_place, end_time
 from tinyworld.core.state import WorldState
 from tinyworld.core.store import Store
 
@@ -70,7 +70,7 @@ class WorldSession:
                 **draft.model_dump(),
                 branch_id=self.branch_id,
                 seq=working.seq + 1,
-                sim_time=working.sim_time,
+                sim_time=end_time(working, draft.effects),
             )
             backup = None if atomic else working.model_copy(deep=True)
             try:

@@ -381,6 +381,15 @@ class Store:
         )[0]
         return row["head"] or 0
 
+    def seq_at_time(self, branch_id: str, when: datetime) -> int:
+        """The last event at or before ``when``; 0 when there is none."""
+        clause, params = self.lineage_clause(branch_id, "seq")
+        row = self.query(
+            f"SELECT MAX(seq) AS head FROM events WHERE {clause} AND sim_time<=?",
+            params + [when.isoformat()],
+        )[0]
+        return row["head"] or 0
+
     # -- snapshots and state --------------------------------------------
 
     def save_snapshot(self, branch_id: str, state: WorldState) -> None:
