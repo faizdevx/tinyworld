@@ -179,7 +179,12 @@ class Scenes:
 
         def fix(value):
             if isinstance(value, str) and value and value not in state.entities:
-                return resolve(state, value) or value
+                found = resolve(state, value)
+                if found is not None:
+                    return found
+                # A bare id with its kind prefix dropped ("tavern" for place:tavern).
+                bare = [i for i in state.entities if i.split(":", 1)[1] == value]
+                return bare[0] if len(bare) == 1 else value
             return value
 
         promise = turn.promise

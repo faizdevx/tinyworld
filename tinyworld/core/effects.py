@@ -129,6 +129,16 @@ class ResolveCommitment(Model):
     status: Literal["kept", "broken", "released"]
 
 
+class LearnKnowledge(Model):
+    """A person comes to hold an idea. ``by`` says how: study, teach, research, god."""
+
+    type: Literal["LearnKnowledge"] = "LearnKnowledge"
+    person: EntityId
+    idea: str
+    level: int = Field(default=1, ge=1, le=3)
+    by: Literal["study", "teach", "research", "god"] = "study"
+
+
 class Utter(Model):
     """Speech or writing. Changes no state; perception and beliefs read it."""
 
@@ -157,7 +167,7 @@ Effect = Annotated[
         MoveEntity, TransferItem, ChangeQuantity, SetAttr, CreateEntity,
         RemoveEntity, Kill, SetRelation, SetEdge, AssertFact, RetractFact,
         StartProcess, AdvanceProcess, EndProcess, Utter, SetRule, AdvanceTime,
-        MakeCommitment, ResolveCommitment,
+        MakeCommitment, ResolveCommitment, LearnKnowledge,
     ],
     Field(discriminator="type"),
 ]
@@ -167,4 +177,5 @@ EFFECT_TYPES: tuple[str, ...] = (
     "RemoveEntity", "Kill", "SetRelation", "SetEdge", "AssertFact",
     "RetractFact", "StartProcess", "AdvanceProcess", "EndProcess", "Utter",
     "SetRule", "AdvanceTime", "MakeCommitment", "ResolveCommitment",
+    "LearnKnowledge",
 )

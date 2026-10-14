@@ -217,6 +217,25 @@ def apply_effect(
             raise EffectError(f"no open commitment: {effect.commitment_id}")
         commitment.status = effect.status
 
+    elif isinstance(effect, fx.LearnKnowledge):
+        from tinyworld.world import knowledge
+
+        person = _entity(state, effect.person)
+        if person.kind != "person" or not person.alive:
+            raise EffectError(f"{effect.person} cannot learn anything")
+        graph = knowledge.ideas(state)
+        if effect.idea not in graph:
+            raise EffectError(f"no such idea: {effect.idea}")
+        if effect.by != "god":
+            lacking = knowledge.missing(state, [person], effect.idea)
+            if lacking:
+                raise EffectError(
+                    f"{person.name} lacks what {effect.idea} builds on: {', '.join(lacking)}"
+                )
+        mine = dict(knowledge.held(person))
+        mine[effect.idea] = max(mine.get(effect.idea, 0), effect.level)
+        person.attrs[knowledge.KEY] = mine
+
     elif isinstance(effect, fx.Utter):
         speaker = _entity(state, effect.speaker)
         if speaker.kind != "person" or not speaker.alive:

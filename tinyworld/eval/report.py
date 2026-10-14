@@ -94,6 +94,10 @@ class RunReport:
     tokens: int
     cost: float
     routine_share: float
+    scene_turns: int
+    promises_made: int
+    promises_kept: int
+    promises_broken: int
     calls_per_sim_day: float | None
     agents: list[AgentLine]
     warnings: list[str]
@@ -207,6 +211,10 @@ def build_report(store: Store, branch_id: str, state: WorldState) -> RunReport:
         tokens=usage.input_tokens + usage.output_tokens,
         cost=round(usage.cost, 4),
         routine_share=routine_share,
+        scene_turns=by_role.get("agent.scene", 0),
+        promises_made=sum(1 for e in events if any(isinstance(x, fx.MakeCommitment) for x in e.effects)),
+        promises_kept=sum(1 for e in events if " kept a promise " in e.narration),
+        promises_broken=sum(1 for e in events if " broke a promise " in e.narration),
         calls_per_sim_day=round(total_calls / days, 1) if days > 0 else None,
         agents=list(lines.values()),
         warnings=warnings,
@@ -224,6 +232,11 @@ def format_report(report: RunReport) -> str:
         + (f" ({report.calls_per_sim_day}/sim day)" if report.calls_per_sim_day else "")
         + f", {report.tokens} tokens, cost {report.cost}",
     ]
+    if report.scene_turns or report.promises_made:
+        out.append(
+            f"scenes: {report.scene_turns} turns; promises: {report.promises_made} made, "
+            f"{report.promises_kept} kept, {report.promises_broken} broken"
+        )
     if report.failures:
         out.append("failures: " + ", ".join(f"{k} {v}" for k, v in sorted(report.failures.items())))
     for text in report.failure_samples[:3]:

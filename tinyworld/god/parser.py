@@ -82,10 +82,6 @@ def resolve(state: WorldState, text: str, kind: str | None = None) -> str | None
     exact = [e.id for e in candidates if slugify(e.name) == slug]
     if len(exact) == 1:
         return exact[0]
-    # A bare id with its kind prefix dropped ("tavern" for place:tavern).
-    by_id = [e.id for e in candidates if e.id.split(":", 1)[1] == slug]
-    if len(by_id) == 1:
-        return by_id[0]
     partial = [e.id for e in candidates if slug in slugify(e.name)]
     return partial[0] if len(partial) == 1 else None
 

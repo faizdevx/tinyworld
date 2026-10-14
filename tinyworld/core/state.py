@@ -97,6 +97,8 @@ class Process(Model):
     work_minutes: int = Field(default=600, gt=0)
     status: Literal["active", "completed", "abandoned", "failed"] = "active"
     outcome: Fact | None = None
+    # An idea this undertaking sets out to work out; its workers learn it.
+    teaches: str | None = None
 
     @model_validator(mode="after")
     def _valid_id(self):

@@ -52,6 +52,7 @@ class Verb(str, Enum):
     USE = "use"
     MAKE = "make"
     WORK = "work"
+    START = "start"
     REST = "rest"
     ATTACK = "attack"
     WAIT = "wait"
