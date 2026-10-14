@@ -191,6 +191,51 @@ def apply_effect(
             raise EffectError(f"no active process: {effect.process_id}")
         process.status = effect.status
 
+    elif isinstance(effect, fx.MakeCommitment):
+        commitment = effect.commitment
+        if commitment.id in state.commitments:
+            raise EffectError(f"commitment already exists: {commitment.id}")
+        if commitment.status != "open":
+            raise EffectError("a new commitment must be open")
+        for who in (commitment.by, commitment.to):
+            person = _entity(state, who)
+            if person.kind != "person":
+                raise EffectError(f"{who} is not a person")
+        if commitment.by == commitment.to:
+            raise EffectError("a person cannot promise themselves")
+        if commitment.place is not None:
+            _place(state, commitment.place)
+        if commitment.item is not None:
+            _holdable(state, commitment.item)
+        if commitment.due <= state.sim_time:
+            raise EffectError("a commitment must fall due in the future")
+        state.commitments[commitment.id] = commitment.model_copy(deep=True)
+
+    elif isinstance(effect, fx.ResolveCommitment):
+        commitment = state.commitments.get(effect.commitment_id)
+        if commitment is None or commitment.status != "open":
+            raise EffectError(f"no open commitment: {effect.commitment_id}")
+        commitment.status = effect.status
+
+    elif isinstance(effect, fx.LearnKnowledge):
+        from tinyworld.world import knowledge
+
+        person = _entity(state, effect.person)
+        if person.kind != "person" or not person.alive:
+            raise EffectError(f"{effect.person} cannot learn anything")
+        graph = knowledge.ideas(state)
+        if effect.idea not in graph:
+            raise EffectError(f"no such idea: {effect.idea}")
+        if effect.by != "god":
+            lacking = knowledge.missing(state, [person], effect.idea)
+            if lacking:
+                raise EffectError(
+                    f"{person.name} lacks what {effect.idea} builds on: {', '.join(lacking)}"
+                )
+        mine = dict(knowledge.held(person))
+        mine[effect.idea] = max(mine.get(effect.idea, 0), effect.level)
+        person.attrs[knowledge.KEY] = mine
+
     elif isinstance(effect, fx.Utter):
         speaker = _entity(state, effect.speaker)
         if speaker.kind != "person" or not speaker.alive:

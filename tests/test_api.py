@@ -113,7 +113,7 @@ def test_thin_premise_asks_and_an_answer_restarts_genesis(monkeypatch):
     asked = {"n": 0}
     original = hub.genesis_llm
 
-    def genesis_llm():
+    def genesis_llm(*_):
         llm = original()
         def premise(request):
             asked["n"] += 1

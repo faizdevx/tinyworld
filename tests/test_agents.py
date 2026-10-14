@@ -510,7 +510,8 @@ def offline_sim(session, seed="s", **options):
 
 def test_offline_world_runs_for_many_ticks():
     session = toy.build_toy()
-    sim, fake = offline_sim(session, reflect_threshold=1.5)
+    # Scenes make promises, and a promise shortens steps; fixed steps are the point here.
+    sim, fake = offline_sim(session, reflect_threshold=1.5, scenes=False)
     results = run(sim.run(30))
 
     assert session.state.sim_time == toy.START + timedelta(hours=30)

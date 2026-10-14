@@ -2,17 +2,19 @@
 witnesses remember."""
 
 import asyncio
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from tinyworld.agents.agent import Acted, Agent
 from tinyworld.agents.beliefs import BeliefStore
-from tinyworld.agents.memory import Compactor, ImportanceScorer, MemoryStore, NewMemory
+from tinyworld.agents import routine as daily
+from tinyworld.agents.memory import EPISODIC, Compactor, ImportanceScorer, MemoryStore, NewMemory
 from tinyworld.agents.persona import Persona, persona_of, render
 from tinyworld.agents.planner import Planner
 from tinyworld.agents.reflection import Reflector
 from tinyworld.core import effects as fx
-from tinyworld.core.events import Event, EventDraft, Outcome
+from tinyworld.core.events import Event, EventDraft, Intent, Outcome, Verb
 from tinyworld.core.session import WorldSession
 from tinyworld.core.state import Entity, Fact, Model, WorldState
 from tinyworld.gm.adjudicator import Adjudicator
@@ -23,11 +25,28 @@ from tinyworld.llm.embed import Embedder, HashEmbedder
 from tinyworld.llm.structured import StructuredLLM
 from tinyworld.llm.types import CallContext
 from tinyworld.sim import tiers as tiering
+from tinyworld.sim import commitments as pledges
 from tinyworld.sim.budget import Budget
+from tinyworld.sim.scene import Scenes, openings
 from tinyworld.sim.schedule import Scheduler
 from tinyworld.sim.scheduler import StepPolicy
 from tinyworld.sim.step import apply_intents
 from tinyworld.sim.tiers import TierPolicy, tier_of
+
+MUNDANE_IMPORTANCE = 0.15
+_MUNDANE = re.compile(
+    r"\b(sleeps|waits|rests|works at [^.]*|goes from [^.]* to [^.]*)\.?$", re.IGNORECASE
+)
+
+
+def mundane(observation) -> bool:
+    """Ordinary routine seen in passing: not worth asking a model about."""
+    return (
+        not observation.addressed
+        and observation.speaker is None
+        and _MUNDANE.search(observation.text.strip()) is not None
+    )
+
 
 PROMOTE_SYSTEM = (
     PERSONA_SYSTEM
@@ -56,6 +75,24 @@ class TickResult:
     level: str = "ok"
     paused: bool = False
     promoted: list[str] = field(default_factory=list)
+    # How each deciding agent was driven this tick: routine, react or deliberate.
+    modes: dict[str, str] = field(default_factory=dict)
+    scenes: int = 0
+    scene_turns: int = 0
+    commitments_made: int = 0
+    commitments_resolved: int = 0
+
+    @property
+    def routine(self) -> int:
+        return sum(1 for m in self.modes.values() if m == "routine")
+
+    @property
+    def reacted(self) -> int:
+        return sum(1 for m in self.modes.values() if m == "react")
+
+    @property
+    def deliberated(self) -> int:
+        return sum(1 for m in self.modes.values() if m == "deliberate")
 
 
 class Simulation:
@@ -74,8 +111,17 @@ class Simulation:
         policy: StepPolicy | None = None,
         tiers: TierPolicy | None = None,
         budget: Budget | None = None,
+        routines: bool = True,
+        scenes: bool = True,
+        salience: float = 0.5,
+        deliberate_hours: float = 12.0,
+        max_jump_minutes: int = 480,
     ) -> None:
         self.session = session
+        self.routines = routines
+        self.salience = salience
+        self.deliberate_hours = deliberate_hours
+        self.max_jump_minutes = max_jump_minutes
         self.llm = llm
         self.world_digest = world_digest
         self.step_minutes = step_minutes
@@ -106,6 +152,7 @@ class Simulation:
                 llm, self.memory, self.beliefs, self.planner, world_digest=world_digest,
                 role="agent.act.tier1", memories_k=3, new_limit=5, beliefs_limit=4,
             )
+        self.scenes = Scenes(self) if (scenes and llm is not None) else None
         self._last_events: list[Event] | None = None
         self._last_step: int | None = None
 
@@ -135,6 +182,121 @@ class Simulation:
             key=lambda p: p.id,
         )
 
+    # -- two speeds: routine, react, deliberate -------------------------
+
+    def _last_decided(self, agent_id: str) -> int:
+        """The latest point at which this agent decided anything."""
+        store, branch = self.session.store, self.session.branch_id
+        return max(self._last_act_tick(agent_id), store.last_seq_by_actor(branch, agent_id))
+
+    def _since_last_model_call(self, agent_id: str) -> timedelta | None:
+        """Simulated time since the model last decided for this agent."""
+        seq = self._last_act_tick(agent_id)
+        if seq < 0:
+            return None
+        store, branch = self.session.store, self.session.branch_id
+        found = store.event(branch, seq) if seq > 0 else None
+        then = found.sim_time if found is not None else store.initial_state(branch).sim_time
+        return self.session.state.sim_time - then
+
+    def recent_actions(self, agent_id: str, n: int = 5) -> list[str]:
+        store, branch = self.session.store, self.session.branch_id
+        events = store.events(branch, actor=agent_id, limit=n, newest_first=True)
+        return [e.narration for e in reversed(events) if e.kind in ("action", "utterance")]
+
+    def mode_of(self, entity: Entity):
+        """How this person decides now: by routine, by reaction, or afresh."""
+        state = self.session.state
+        if not self.routines:
+            return "deliberate", None
+        block = daily.current_block(state, entity)
+        if block is None:
+            return "deliberate", None
+        branch = self.session.branch_id
+        if block.kind == "promise":
+            # A promise already made is kept by going there, not re-decided.
+            return "routine", block
+        since = self._since_last_model_call(entity.id)
+        if since is None or since >= timedelta(hours=self.deliberate_hours):
+            return "deliberate", block
+        recent = self.recent_actions(entity.id, 3)
+        if len(recent) == 3 and len(set(recent)) == 1:
+            return "deliberate", block
+        fresh = self.memory.list(
+            branch, entity.id, kinds=EPISODIC,
+            after_seq=self._last_decided(entity.id), include_superseded=True,
+        )
+        if any(m.importance >= self.salience for m in fresh):
+            return "react", block
+        return "routine", block
+
+    def _before_promises(self, step: int) -> int:
+        """Shorten ``step`` so a tick lands when someone must set out for a promise.
+
+        Otherwise a long step can jump from before the lead time to after the
+        due time, and the promise is broken without anyone having had a turn.
+        """
+        state = self.session.state
+        for promise in state.open_commitments():
+            keeper = state.entities.get(promise.by)
+            lead = daily.promise_lead(state, keeper, promise) if keeper else None
+            if lead is None or promise.kind != "meet":
+                continue
+            until = int(
+                (promise.due - timedelta(minutes=lead) - state.sim_time).total_seconds() // 60
+            )
+            if 0 < until < step:
+                step = until
+        return max(1, step)
+
+    def _routine_jump(self, step: int) -> tuple[int, dict[str, Intent]]:
+        """Lengthen the step when everyone is on routine until a later boundary.
+
+        Returns the new step and the routine intent of each person, decided at
+        the start of the jump: they carry on with what their day says for the
+        whole stretch, and the clock is moved once.
+        """
+        if not self.routines:
+            return step, {}
+        state = self.session.state
+        minds = [
+            p for p in state.people()
+            if p.location and persona_of(p) is not None and tier_of(p) < 2
+        ]
+        if not minds:
+            return step, {}
+        blocks = {}
+        for person in minds:
+            mode, block = self.mode_of(person)
+            if mode != "routine" or block is None:
+                return step, {}
+            blocks[person.id] = block
+        horizon = min(
+            [b.minutes_left(state.sim_time) for b in blocks.values()]
+            + [self.max_jump_minutes]
+        )
+        pending = self.scheduler.pending(self.session.branch_id)
+        if pending:
+            wait = int((pending[0][1] - state.sim_time).total_seconds() // 60)
+            horizon = min(horizon, max(1, wait))
+        for promise in state.open_commitments():
+            keeper = state.entities.get(promise.by)
+            lead = daily.promise_lead(state, keeper, promise) if keeper else None
+            wait = int((promise.due - state.sim_time).total_seconds() // 60)
+            # Stop early enough that whoever promised can still set out.
+            horizon = min(horizon, max(1, wait - (lead if lead is not None else 0)))
+        if horizon <= step:
+            return step, {}
+        intents = {}
+        for person in minds:
+            intent = daily.routine_intent(state, person, blocks[person.id], horizon)
+            # Someone still on their way to their place: let the ordinary
+            # step carry them there before time is skipped.
+            if intent is None or intent.verb is Verb.MOVE:
+                return step, {}
+            intents[person.id] = intent
+        return horizon, intents
+
     # -- memory ---------------------------------------------------------
 
     def _last_act_tick(self, agent_id: str) -> int:
@@ -158,12 +320,15 @@ class Simulation:
             return 0
         persona = persona_of(observer)
         who = render(observer, persona) if persona else observer.name
-        scores = await self.scorer.score(
+        worth = [o for o in kept if not mundane(o)]
+        asked = await self.scorer.score(
             who,
-            [o.text for o in kept],
+            [o.text for o in worth],
             CallContext(branch, tick_seq, observer.id),
-            addressed=[o.addressed for o in kept],
-        )
+            addressed=[o.addressed for o in worth],
+        ) if worth else []
+        by_id = {id(o): s for o, s in zip(worth, asked)}
+        scores = [by_id.get(id(o), MUNDANE_IMPORTANCE) for o in kept]
         items = [
             NewMemory(
                 kind="utterance_heard"
@@ -220,6 +385,41 @@ class Simulation:
             if event is not None:
                 observations += perceive(event, store.state_at(branch, seq))
         return await self.remember(observations, tick_seq)
+
+    # -- notes and promises ---------------------------------------------
+
+    def write_notes(
+        self, notes: list[tuple[str, str]], seq: int, importance: float = 0.7
+    ) -> None:
+        """A first-hand memory for each (person, text), at event ``seq``."""
+        state = self.session.state
+        for agent_id, text in notes:
+            entity = state.entities.get(agent_id)
+            if entity is None or persona_of(entity) is None:
+                continue
+            self.memory.write(
+                self.session.branch_id, agent_id,
+                [
+                    NewMemory(
+                        kind="observation", text=text, created_seq=seq,
+                        sim_time=state.sim_time, importance=importance,
+                        source_events=[seq] if seq > 0 else [],
+                    )
+                ],
+            )
+
+    def settle_commitments(self) -> list[Event]:
+        """Resolve promises that have fallen due, and let both sides know."""
+        session = self.session
+        events: list[Event] = []
+        for draft, notes in pledges.settle(
+            session.state, session.store, session.branch_id
+        ):
+            committed = session.commit([draft], atomic=False).events
+            if committed:
+                events += committed
+                self.write_notes(notes, committed[-1].seq, 0.8)
+        return events
 
     # -- promotion ------------------------------------------------------
 
@@ -466,6 +666,10 @@ class Simulation:
             )
         else:
             step = self.policy.base_minutes if self.policy else self.step_minutes
+        jumped: dict[str, Intent] = {}
+        if step_minutes is None:
+            step = self._before_promises(step)
+            step, jumped = self._routine_jump(step)
         result.step_minutes = step
         if journal:
             session.store.journal_add(branch, tick_seq, "tick", {"step": step})
@@ -486,27 +690,52 @@ class Simulation:
         result.events += opening.events
         observations = [o for batch in opening.observed for o in batch]
         result.events += await self.upkeep(before, tick_seq)
+        settled = self.settle_commitments()
+        result.events += settled
+        result.commitments_resolved = len(settled)
 
         # 2. Everyone decides at once, from the same view of the world.
         state = session.state
         deciders = []
+        by_routine: list[Acted] = []
         for entity in self.active_agents(state, tick_seq, step=step, cheap=cheap):
-            agent = self.agent if self._acts_as(entity, step, cheap) == 0 else self.agent_tier1
+            tier = self._acts_as(entity, step, cheap)
+            agent = self.agent if tier == 0 else self.agent_tier1
+            if entity.id in jumped:
+                by_routine.append(Acted(jumped[entity.id], "routine", True, None))
+                result.modes[entity.id] = "routine"
+                continue
+            if tier == 0:
+                mode, block = self.mode_of(entity)
+            else:
+                mode, block = "deliberate", None
+            if mode == "routine" and block is not None:
+                intent = daily.routine_intent(state, entity, block, step)
+                if intent is not None:
+                    by_routine.append(Acted(intent, "routine", True, None))
+                    result.modes[entity.id] = "routine"
+                    continue
+                mode = "react"
             if agent is not None:
-                deciders.append((entity, agent))
-        acted: list[Acted] = await asyncio.gather(
+                result.modes[entity.id] = mode
+                deciders.append((entity, agent, daily.hint(state, entity, block)))
+        modelled: list[Acted] = await asyncio.gather(
             *(
                 agent.act(
                     state, entity, branch,
                     CallContext(branch, tick_seq, entity.id),
                     self._last_act_tick(entity.id),
+                    hint=hint,
+                    recent=self.recent_actions(entity.id),
+                    promises=pledges.lines_for(state, entity.id),
                 )
-                for entity, agent in deciders
+                for entity, agent, hint in deciders
             )
         )
-        result.thoughts = {
-            entity.id: act.thought for (entity, _), act in zip(deciders, acted)
-        }
+        acted: list[Acted] = sorted(
+            by_routine + list(modelled), key=lambda a: a.intent.agent
+        )
+        result.thoughts = {a.intent.agent: a.thought for a in acted}
 
         # 3. The Game Master decides what actually happens.
         step_result = await apply_intents(
@@ -517,9 +746,23 @@ class Simulation:
         result.outcomes = step_result.outcomes
         observations += step_result.observations
 
+        # 3b. A line addressed to someone is answered, within the same tick.
+        scene_events: list[Event] = []
+        if self.scenes is not None:
+            for speaker, listener, line in openings(
+                session.state, step_result.events, self.scenes.max_scenes
+            ):
+                scene = await self.scenes.run(tick_seq, speaker, listener, line)
+                scene_events += scene.events
+                observations += scene.observations
+                result.scenes += scene.scenes
+                result.scene_turns += scene.turns
+                result.commitments_made += scene.commitments
+            result.events += scene_events
+
         # 4. People drawn into events start deciding for themselves.
         result.promoted = await self.promote(
-            self.tiers.involved(session.state, step_result.events)
+            self.tiers.involved(session.state, step_result.events + scene_events)
         )
 
         # 5. Witnesses remember and update what they believe.

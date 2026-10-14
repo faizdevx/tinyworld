@@ -120,6 +120,42 @@ def process_blockers(state: WorldState, agent: Entity, process) -> list[str]:
     return blockers
 
 
+def wage_for(state: WorldState, minutes: int) -> tuple[str, int] | None:
+    """(item, amount) paid for ``minutes`` of work, from the world's wage rule."""
+    rule = state.rules.get("wage")
+    if not isinstance(rule, dict):
+        return None
+    item, per_hour = rule.get("item"), rule.get("per_hour")
+    if (
+        not isinstance(item, str) or item not in state.entities
+        or isinstance(per_hour, bool) or not isinstance(per_hour, (int, float))
+        or per_hour <= 0
+    ):
+        return None
+    return item, max(1, round(per_hour * minutes / 60))
+
+
+def _shift(state: WorldState, agent: Entity, intent: Intent, preset: list) -> Verdict:
+    """A stretch of ordinary paid work at the person's workplace."""
+    workplace = agent.attrs.get("workplace")
+    if not isinstance(workplace, str) or workplace not in state.entities:
+        return _impossible(intent, f"{agent.name} has no workplace")
+    if agent.location != workplace:
+        return _impossible(intent, f"{agent.name} is not at {name_of(state, workplace)}")
+    minutes = _int_arg(intent, "minutes", DEFAULT_MINUTES[Verb.WORK])
+    if minutes is None:
+        return _impossible(intent, "minutes must be a positive whole number")
+    effects = list(preset)
+    paid = wage_for(state, minutes)
+    if paid is not None:
+        effects.append(fx.ChangeQuantity(holder=agent.id, item=paid[0], delta=paid[1]))
+    return _resolved(
+        intent, effects,
+        f"{agent.name} works at {name_of(state, workplace)}.",
+        minutes,
+    )
+
+
 def check(state: WorldState, intent: Intent) -> Verdict:
     agent = state.entities.get(intent.agent)
     if agent is None or agent.kind != "person":
@@ -167,6 +203,8 @@ def check(state: WorldState, intent: Intent) -> Verdict:
         if minutes is None:
             return _impossible(intent, "minutes must be a positive whole number")
         doing = "waits" if verb is Verb.WAIT else "rests"
+        if verb is Verb.REST and intent.args.get("sleep") is True:
+            doing = "sleeps"
         return _resolved(intent, [], f"{agent.name} {doing}.", minutes)
 
     # Speech can ride along with any other action.
@@ -232,6 +270,18 @@ def check(state: WorldState, intent: Intent) -> Verdict:
         # Taking from a person or from someone else's property is contested.
         return Verdict("adjudicate", preset=preset)
 
+    if verb is Verb.START:
+        from tinyworld.world import projects
+
+        begun = projects.begin(state, agent, intent.args, intent.text)
+        if isinstance(begun, str):
+            return _impossible(intent, begun)
+        effects, narration = begun
+        return _resolved(intent, preset + effects, narration, projects.START_MINUTES)
+
+    if verb is Verb.WORK and intent.args.get("shift") is True:
+        return _shift(state, agent, intent, preset)
+
     if verb is Verb.WORK and target_id in state.processes:
         process = state.processes[target_id]
         if process.status != "active":
@@ -242,13 +292,17 @@ def check(state: WorldState, intent: Intent) -> Verdict:
         minutes = _int_arg(intent, "minutes", DEFAULT_MINUTES[Verb.WORK])
         if minutes is None:
             return _impossible(intent, "minutes must be a positive whole number")
-        delta = min(1.0, minutes / process.work_minutes)
+        from tinyworld.world import projects
+
+        delta = min(
+            1.0 - process.progress,
+            minutes / process.work_minutes * projects.skill_factor(state, agent, process),
+        )
         effects = preset + [fx.AdvanceProcess(process_id=process.id, delta=delta)]
         narration = f"{agent.name} works on {process.name}."
         if process.progress + delta >= 1.0 - 1e-9:
             effects.append(fx.EndProcess(process_id=process.id, status="completed"))
-            if process.outcome is not None:
-                effects.append(fx.AssertFact(fact=process.outcome))
+            effects += projects.completion_effects(state, process, agent)
             narration = f"{agent.name} completes {process.name}."
         return _resolved(intent, effects, narration, minutes)
 

@@ -22,7 +22,7 @@ from tinyworld.llm.types import CallContext
 # outcome of one person's action.
 FORBIDDEN = (fx.SetRule, fx.AdvanceTime, fx.SetEdge, fx.RemoveEntity)
 # Attributes that define who an agent is; an action's outcome may not rewrite them.
-PROTECTED_ATTRS = frozenset({"persona", "tier"})
+PROTECTED_ATTRS = frozenset({"persona", "tier", "knowledge"})
 MAX_MINUTES = 24 * 60
 
 SYSTEM = """You are the Game Master of a simulated world. A person attempts an action. \

@@ -33,6 +33,11 @@ class IntentsRequest(BaseModel):
     intents: list[Intent]
 
 
+class ConnectRequest(BaseModel):
+    provider: str
+    key: str
+
+
 class WorldRequest(BaseModel):
     premise: str
 
@@ -124,6 +129,18 @@ def create_app(hub: Hub | None = None) -> FastAPI:
             "tiers": hub.config.tiers,
         }
 
+    @app.post("/api/connect")
+    async def connect(request: ConnectRequest) -> dict:
+        """Use a model key from now on. Held in memory only, never written."""
+        hub = the_hub()
+        try:
+            await hub.connect(request.provider, request.key)
+        except LLMFatal as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"model_configured": True, "offline": False, "tiers": hub.config.tiers}
+
     @app.get("/api/worlds")
     async def worlds() -> list[dict]:
         hub = the_hub()
@@ -169,6 +186,7 @@ def create_app(hub: Hub | None = None) -> FastAPI:
             "genesis": hub.genesis_job(world_id).view(),
             "branches": [branch_json(b) for b in branches.tree(hub.store, world_id)],
             "offline": hub.store.meta_get(world_id, "canned_genesis") == "1",
+            "prepared": hub.prepared_of(world_id),
         }
 
     @app.post("/api/worlds/{world_id}/genesis/answer")

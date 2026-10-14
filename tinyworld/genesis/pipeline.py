@@ -139,6 +139,16 @@ class GenesisPipeline:
             max_tokens=1500,
         )
         premise = reply.value
+        if not reply.ok:
+            # Say why. "Could not be read" used to hide a provider error.
+            premise = premise.model_copy(
+                update={
+                    "questions": [
+                        f"The model could not read the premise ({reply.error[:200]}). "
+                        "Try again, or say when and where it is set."
+                    ]
+                }
+            )
         self.bibles.put(world_id, "premise", premise)
         if not premise.questions:
             try:

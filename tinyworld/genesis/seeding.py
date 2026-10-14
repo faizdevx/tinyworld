@@ -11,6 +11,7 @@ from tinyworld.core.state import Entity, Fact, PlaceEdge, WorldState
 from tinyworld.genesis.bible import Bible, Finding
 from tinyworld.genesis.critic import connected_components
 from tinyworld.sim.tiers import birth_date_for
+from tinyworld.world import knowledge
 
 
 def start_time(bible: Bible) -> datetime:
@@ -52,6 +53,15 @@ def _system(effects: list, narration: str) -> EventDraft:
         kind="system", actor="system", effects=effects,
         narration=narration, visibility="god_only",
     )
+
+
+_CURRENCY = {
+    "money", "cash", "coin", "coins", "mark", "marks", "reichsmark", "reichsmarks",
+    "rupee", "rupees", "inr", "dollar", "dollars", "pound", "pounds", "franc",
+    "francs", "lira", "ruble", "rubles", "rouble", "roubles", "yen", "euro",
+    "euros", "currency", "wages", "salary", "gold", "silver", "denarii", "florin",
+    "florins", "money_rupees", "cash_rupees",
+}
 
 
 def seed_drafts(bible: Bible) -> tuple[list[EventDraft], list[Finding]]:
@@ -197,6 +207,9 @@ def seed_drafts(bible: Bible) -> tuple[list[EventDraft], list[Finding]]:
 
     # -- people -------------------------------------------------------------
     era = ", ".join(part for part in (bible.premise.place, bible.premise.period) if part)
+    graph = knowledge.build(
+        bible.technology.available, bible.technology.not_yet, bible.technology.dependencies
+    )
     people_effects = []
     relation_effects = []
     seen_people: set[str] = set()
@@ -230,6 +243,19 @@ def seed_drafts(bible: Bible) -> tuple[list[EventDraft], list[Finding]]:
         }
         if spec.faction and slugify(spec.faction) in factions:
             attrs["faction"] = factions[slugify(spec.faction)]
+        # What they know in particular, beyond what everyone in this era does.
+        mastered = {}
+        for phrase in spec.knows:
+            idea = knowledge.resolve_in(graph, phrase)
+            if idea is not None and graph[idea].status != "undiscovered":
+                mastered[idea] = 2
+        if mastered:
+            attrs[knowledge.KEY] = mastered
+        if spec.location:
+            start = place(spec.location, spec.name)
+            if start != home:
+                # Where a person starts the day, away from home, is where they work.
+                attrs["workplace"] = start
         inventory: dict[str, int] = {}
         for possession in spec.possessions:
             item = resource(possession.resource, "figures")
@@ -280,11 +306,20 @@ def seed_drafts(bible: Bible) -> tuple[list[EventDraft], list[Finding]]:
         fx.SetRule(key="era", value=era),
         fx.SetRule(key="tech.available", value=list(bible.technology.available)),
         fx.SetRule(key="tech.not_yet", value=list(bible.technology.not_yet)),
+        fx.SetRule(key=knowledge.KEY, value=knowledge.graph_value(graph)),
         fx.SetRule(
             key="population",
             value=[group.model_dump() for group in bible.culture.population],
         ),
     ]
+
+    currency = next(
+        (rid for slug, rid in resources.items() if slug in _CURRENCY), None
+    )
+    if currency is not None:
+        rule_effects.append(
+            fx.SetRule(key="wage", value={"item": currency, "per_hour": 1})
+        )
 
     stages = [
         (resource_effects, "Resources defined."),

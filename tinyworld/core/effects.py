@@ -9,7 +9,7 @@ from typing import Annotated, Literal, Union
 from pydantic import Field, JsonValue
 
 from tinyworld.core.ids import EntityId, FactId, ProcessId
-from tinyworld.core.state import Entity, Fact, Model, PlaceEdge, Process
+from tinyworld.core.state import Commitment, Entity, Fact, Model, PlaceEdge, Process
 
 Channel = Literal["direct", "audible", "public", "written"]
 MessageType = Literal[
@@ -118,6 +118,27 @@ class EndProcess(Model):
     status: Literal["completed", "abandoned", "failed"]
 
 
+class MakeCommitment(Model):
+    type: Literal["MakeCommitment"] = "MakeCommitment"
+    commitment: Commitment
+
+
+class ResolveCommitment(Model):
+    type: Literal["ResolveCommitment"] = "ResolveCommitment"
+    commitment_id: str
+    status: Literal["kept", "broken", "released"]
+
+
+class LearnKnowledge(Model):
+    """A person comes to hold an idea. ``by`` says how: study, teach, research, god."""
+
+    type: Literal["LearnKnowledge"] = "LearnKnowledge"
+    person: EntityId
+    idea: str
+    level: int = Field(default=1, ge=1, le=3)
+    by: Literal["study", "teach", "research", "god"] = "study"
+
+
 class Utter(Model):
     """Speech or writing. Changes no state; perception and beliefs read it."""
 
@@ -146,6 +167,7 @@ Effect = Annotated[
         MoveEntity, TransferItem, ChangeQuantity, SetAttr, CreateEntity,
         RemoveEntity, Kill, SetRelation, SetEdge, AssertFact, RetractFact,
         StartProcess, AdvanceProcess, EndProcess, Utter, SetRule, AdvanceTime,
+        MakeCommitment, ResolveCommitment, LearnKnowledge,
     ],
     Field(discriminator="type"),
 ]
@@ -154,5 +176,6 @@ EFFECT_TYPES: tuple[str, ...] = (
     "MoveEntity", "TransferItem", "ChangeQuantity", "SetAttr", "CreateEntity",
     "RemoveEntity", "Kill", "SetRelation", "SetEdge", "AssertFact",
     "RetractFact", "StartProcess", "AdvanceProcess", "EndProcess", "Utter",
-    "SetRule", "AdvanceTime",
+    "SetRule", "AdvanceTime", "MakeCommitment", "ResolveCommitment",
+    "LearnKnowledge",
 )

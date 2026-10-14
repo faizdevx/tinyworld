@@ -238,9 +238,37 @@ def offline_llm(get_state: Callable[[], WorldState], seed: str = "offline") -> F
             "events": events,
         }
 
+    def scene(request: LLMRequest) -> dict:
+        """A short, plain reply. Now and then a promise to meet or a refusal."""
+        state = get_state()
+        me = request.context.agent
+        rng = seeded(seed, "scene", request.context.tick_seq, me, request.user.count("<said>"))
+        said = request.user.count("<said>")
+        roll = rng.random()
+        if said >= 3 or roll < 0.25:
+            return {"say": "", "end": True}
+        here = state.entities[me].location
+        exits = sorted(state.neighbors(here)) if here else []
+        if exits and roll < 0.4:
+            place = rng.choice(exits)
+            return {
+                "thought": "Let us settle this later.",
+                "say": f"Come to {state.entities[place].name} this evening.",
+                "tone": "neutral",
+                "move": "promise",
+                "promise": {
+                    "kind": "meet", "text": f"be at {state.entities[place].name}",
+                    "place": place, "hours": rng.choice([2, 3, 6]),
+                },
+            }
+        if roll < 0.55:
+            return {"say": "I have no time for this.", "tone": "cold", "move": "refuse", "end": True}
+        return {"say": rng.choice(SMALL_TALK), "tone": rng.choice(["warm", "neutral", "joking"])}
+
     return FakeLLM(
         {
             "chronicler": chronicle,
+            "agent.scene": scene,
             "tier2.summary": {"text": "People are getting by and keeping their heads down."},
             "god.parse": god,
             "agent.persona": persona,

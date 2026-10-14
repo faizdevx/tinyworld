@@ -205,6 +205,11 @@ def test_a_driven_run_replays_to_an_identical_log():
     skipper = TimeSkip(sim)
 
     run(sim.run(6))
+    # Someone has to be there to see it, or there is nothing to remember.
+    otto_at = session.state.entities["person:otto_brandt"].location
+    run(channel.submit(
+        session, f"move Lena Vogel to {session.state.entities[otto_at].name}"
+    ))
     before = session.state.seq
     result = run(channel.submit(session, "kill Otto Brandt"))
     assert run(sim.remember_events(result.event_seqs, before)) > 0
@@ -216,7 +221,7 @@ def test_a_driven_run_replays_to_an_identical_log():
     run(sim.tick(step_minutes=15))
 
     ops = [row["op"] for row in session.store.journal(session.branch_id)]
-    assert ops.count("tick") == 11 and ops.count("skip") == 1 and ops.count("god") == 2
+    assert ops.count("tick") == 11 and ops.count("skip") == 1 and ops.count("god") == 3
 
     report = run(replay(session.store, session.branch_id))
     assert report.identical, report.first_difference

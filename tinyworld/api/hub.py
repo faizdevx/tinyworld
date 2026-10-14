@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from tinyworld.api.runner import BranchRunner
 from tinyworld.core.session import WorldSession
 from tinyworld.core.store import Store
-from tinyworld.fixtures import berlin
+from tinyworld.fixtures import berlin, prepared
 from tinyworld.genesis.bible import BibleStore, Finding
 from tinyworld.genesis.pipeline import GenesisPipeline
 from tinyworld.genesis.research import NullSearch, SearchProvider
@@ -197,17 +197,94 @@ class Hub:
 
     # -- genesis --------------------------------------------------------
 
-    def genesis_llm(self) -> StructuredLLM | None:
+    def genesis_llm(self, world_id: str | None = None) -> StructuredLLM | None:
         if self.llm is not None:
             return self.llm
         if not self.offline_fallback:
             return None
+        module = berlin
+        if world_id is not None:
+            key, module, matched = prepared.pick(self.store.world(world_id)["premise"])
+            self.store.meta_set(world_id, "prepared_world", key)
+            self.store.meta_set(world_id, "prepared_match", "1" if matched else "0")
         return StructuredLLM(
-            FakeLLM(berlin.genesis_handlers()), self.config, self.tracer
+            FakeLLM(module.genesis_handlers()), self.config, self.tracer
         )
 
-    def pipeline(self, job: GenesisJob | None = None) -> GenesisPipeline:
-        llm = self.genesis_llm()
+    def prepared_of(self, world_id: str) -> dict | None:
+        """Which prepared world stands in for this one, or None if built by a model."""
+        if self.store.meta_get(world_id, "canned_genesis") != "1":
+            return None
+        key = self.store.meta_get(world_id, "prepared_world") or "berlin"
+        module = prepared.by_key(key) or berlin
+        return {
+            "key": key,
+            "label": prepared.label_of(module),
+            "matched": self.store.meta_get(world_id, "prepared_match") != "0",
+        }
+
+    async def connect(self, provider: str, key: str) -> None:
+        """Use a model from now on. The key is kept in this process only.
+
+        Nothing is written to disk. The key is tried with one tiny call first;
+        a provider that rejects it raises LLMFatal and nothing changes.
+        """
+        from pydantic import BaseModel
+
+        from tinyworld.llm.types import CallContext
+
+        names = {
+            "openrouter": "OPENROUTER_API_KEY",
+            "gemini": "GEMINI_API_KEY",
+            "anthropic": "ANTHROPIC_API_KEY",
+        }
+        if provider not in names:
+            raise ValueError(f"unknown provider: {provider}")
+        key = key.strip()
+        if not key:
+            raise ValueError("a key is needed")
+        variable = names[provider]
+        previous = os.environ.get(variable)
+        os.environ[variable] = key
+
+        def restore() -> None:
+            if previous is None:
+                os.environ.pop(variable, None)
+            else:
+                os.environ[variable] = previous
+
+        try:
+            client = make_client(provider)
+            if client is None:
+                raise ValueError(f"{provider} support is not installed")
+            config = LLMConfig.load(
+                provider=provider if provider in ("gemini", "openrouter") else "anthropic"
+            )
+            tracer = Tracer(self.store, config)
+            llm = StructuredLLM(client, config, None, max_repairs=0)
+
+            class Ping(BaseModel):
+                ok: bool = True
+
+            reply = await llm.call(
+                "memory.ping", Ping, system="Reply with ok true.", user="ping",
+                context=CallContext("probe"), fallback=Ping(ok=False), max_tokens=20,
+            )
+            if not reply.ok:
+                raise ValueError(f"the model did not answer: {reply.error[:200]}")
+        except Exception:
+            restore()
+            raise
+        self.client, self.config, self.tracer = client, config, tracer
+        self.llm = StructuredLLM(client, config, tracer)
+        self.search = default_search(True)
+        # Runners made until now hold the offline stand-in.
+        for runner in list(self._runners.values()):
+            await runner.pause()
+        self._runners = {}
+
+    def pipeline(self, job: GenesisJob | None = None, world_id: str | None = None) -> GenesisPipeline:
+        llm = self.genesis_llm(world_id)
         if llm is None:
             raise RuntimeError("no model is configured")
 
@@ -238,7 +315,7 @@ class Hub:
         job.running, job.error, job.questions = True, "", []
         job.publish()
         try:
-            pipeline = self.pipeline(job)
+            pipeline = self.pipeline(job, world_id)
             if stage is None:
                 status = await pipeline.run(world_id)
                 job.questions = status.questions

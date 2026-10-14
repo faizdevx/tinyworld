@@ -101,6 +101,10 @@ class Technology(Model):
     overview: str = ""
     available: list[str] = Field(default_factory=list)
     not_yet: list[str] = Field(default_factory=list)
+    dependencies: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="For each not_yet item, the available items it builds on",
+    )
 
 
 class PopulationGroup(Model):
@@ -255,7 +259,8 @@ SECTION_BRIEFS = {
     "are. Define the resources that matter and place starting stocks at named "
     "places or with named people.",
     "technology": "What is in everyday use, and what does not exist yet. Be "
-    "specific to this period and this divergence.",
+    "specific to this period and this divergence. In `dependencies`, give each "
+    "not-yet item the available items it builds on, using the exact names.",
     "culture": "Norms, daily routines, and who lives here: population groups "
     "with rough counts.",
     "factions": "The organised or informal groups with competing aims.",
