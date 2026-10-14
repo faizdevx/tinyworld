@@ -63,7 +63,10 @@ def acting(fake):
 def test_tier1_agents_act_on_the_cheap_role_every_few_ticks():
     session = toy.build_toy()
     system(session, fx.SetAttr(entity=toy.LENA, key="tier", value=1))
-    sim, fake = offline(session, tiers=TierPolicy(tier1_every=4, idle_events=10_000, promote_involved=False))
+    sim, fake = offline(
+        session, scenes=False,
+        tiers=TierPolicy(tier1_every=4, idle_events=10_000, promote_involved=False),
+    )
     run(sim.run(12))
 
     by_agent = {}

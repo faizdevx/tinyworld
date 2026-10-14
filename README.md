@@ -44,14 +44,35 @@ agents, not a real model. They show the interface and the mechanics. They are no
 evidence that a model produces interesting lives; that still has to be shown on a
 live run (see [Results so far](#results-so-far)).
 
-What the report said about that offline run (39 simulated hours, 10 people):
-waiting 5%, repeating 0%, 1,853 model calls, of which memory upkeep
-(importance scoring, reflection, summaries) was about two thirds and agent
-decisions under a third. Of 10 promises made, 1 was kept and 8 broken, mostly
-because the routine pulled people elsewhere. Both are known problems, not
-solved ones.
+What the report said about that offline run (39 simulated hours, 10 people),
+before and after two fixes:
 
-Knowledge, projects and persona change are the next stage; the plan is in
+| | before | after (four runs) |
+|---|---|---|
+| model calls per simulated day | about 1,140 | 460 to 530 |
+| promises kept | 1 of 10 | 22 of 22 |
+| waiting / repeating | 5% / 0% | 4% to 8% / 0% |
+
+Two things changed. Ordinary routine lines ("X sleeps", "X works at …") are no
+longer sent to a model to be scored, which was most of the memory upkeep. And a
+promise to be somewhere is now part of the person's day: the routine walks them
+there in time, and a step is cut short so someone is never skipped past the
+moment they had to set out. These are scripted agents, so the 22 of 22 says the
+mechanism works, not that a real model keeps promises.
+
+- **Knowledge.** A small graph of ideas lives in the world rules. Everyone
+  holds the common ones; others are held by few, or by nobody yet. A person
+  can only come to know an idea if they already hold what it builds on.
+- **Projects.** A person can start an undertaking of their own with the `start`
+  verb. The rules check it: items must exist, helpers must be people, a large
+  undertaking cannot be done alone, and working out a new idea needs its
+  foundations. Skill sets how fast it goes. Finishing a discovery teaches the
+  workers and records a fact that others can hear about.
+- **Teaching.** In a conversation someone can teach an idea they hold well to a
+  person who is ready for it.
+
+Not done yet: people changing over a life, the year-by-year skip, factions
+that decide things, news from outside the town. The plan is in
 [docs/V3_PLAN.md](docs/V3_PLAN.md).
 
 ## Running it

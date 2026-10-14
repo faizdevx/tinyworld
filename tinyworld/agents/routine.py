@@ -15,7 +15,8 @@ from tinyworld.core.events import Intent, Verb
 from tinyworld.core.state import Entity, WorldState
 
 DEFAULT_DAY = {"wake": 6, "work_start": 8, "work_end": 17, "sleep": 22}
-Kind = Literal["sleep", "morning", "work"]
+Kind = Literal["sleep", "morning", "work", "promise"]
+PROMISE_BUFFER_MINUTES = 15
 
 
 @dataclass(frozen=True)
@@ -51,9 +52,45 @@ def _at(now: datetime, hour: int, days: int = 0) -> datetime:
     return (now + timedelta(days=days)).replace(hour=hour, minute=0, second=0, microsecond=0)
 
 
+def promise_lead(state: WorldState, entity: Entity, commitment) -> int | None:
+    """Minutes before ``commitment`` falls due that the person must set out.
+
+    None when the promise cannot be kept at all: no way to get there.
+    """
+    place = commitment.place
+    if place is None or entity.location is None:
+        return None
+    if entity.location == place:
+        return PROMISE_BUFFER_MINUTES
+    route = state.path(entity.location, place)
+    if route is None:
+        return None
+    return route[1] + PROMISE_BUFFER_MINUTES
+
+
+def _promise_block(state: WorldState, entity: Entity, now: datetime) -> Block | None:
+    """A promise to be somewhere comes before sleep, work and everything else."""
+    due = []
+    for commitment in state.open_commitments(entity.id):
+        if commitment.by != entity.id or commitment.kind != "meet":
+            continue
+        lead = promise_lead(state, entity, commitment)
+        if lead is None or now < commitment.due - timedelta(minutes=lead):
+            continue
+        due.append(commitment)
+    if not due:
+        return None
+    first = min(due, key=lambda c: (c.due, c.id))
+    return Block("promise", first.place, first.due)
+
+
 def current_block(state: WorldState, entity: Entity, now: datetime | None = None) -> Block | None:
     """What this person is expected to be doing now, or None in free time."""
     now = now or state.sim_time
+    if entity.alive and entity.attrs.get("status") != "child":
+        kept = _promise_block(state, entity, now)
+        if kept is not None:
+            return kept
     home = _place(state, entity, "home")
     if home is None or entity.attrs.get("status") == "child":
         return None
@@ -85,6 +122,11 @@ def routine_intent(
             text=f"head to {target.name} ({block.kind})",
         )
     minutes = min(block.minutes_left(state.sim_time), max(1, limit))
+    if block.kind == "promise":
+        return Intent(
+            agent=entity.id, verb=Verb.WAIT, args={"minutes": minutes},
+            text="wait to keep a promise",
+        )
     if block.kind == "sleep":
         return Intent(
             agent=entity.id, verb=Verb.REST, args={"minutes": minutes, "sleep": True},
@@ -116,5 +158,6 @@ def hint(state: WorldState, entity: Entity, block: Block | None) -> str:
         "sleep": f"sleeping at {where}",
         "morning": f"getting ready at {where}",
         "work": f"working at {where}",
+        "promise": f"being at {where} to keep a promise",
     }[block.kind]
     return f"Your usual routine now: {what}, until {block.until:%H:%M}."

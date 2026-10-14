@@ -2,6 +2,7 @@
 witnesses remember."""
 
 import asyncio
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -32,7 +33,20 @@ from tinyworld.sim.scheduler import StepPolicy
 from tinyworld.sim.step import apply_intents
 from tinyworld.sim.tiers import TierPolicy, tier_of
 
-COMMITMENT_LEAD_MINUTES = 90
+MUNDANE_IMPORTANCE = 0.15
+_MUNDANE = re.compile(
+    r"\b(sleeps|waits|rests|works at [^.]*|goes from [^.]* to [^.]*)\.?$", re.IGNORECASE
+)
+
+
+def mundane(observation) -> bool:
+    """Ordinary routine seen in passing: not worth asking a model about."""
+    return (
+        not observation.addressed
+        and observation.speaker is None
+        and _MUNDANE.search(observation.text.strip()) is not None
+    )
+
 
 PROMOTE_SYSTEM = (
     PERSONA_SYSTEM
@@ -199,10 +213,9 @@ class Simulation:
         if block is None:
             return "deliberate", None
         branch = self.session.branch_id
-        if pledges.due_soon_for(
-            state, entity.id, timedelta(minutes=COMMITMENT_LEAD_MINUTES)
-        ):
-            return "react", block
+        if block.kind == "promise":
+            # A promise already made is kept by going there, not re-decided.
+            return "routine", block
         since = self._since_last_model_call(entity.id)
         if since is None or since >= timedelta(hours=self.deliberate_hours):
             return "deliberate", block
@@ -216,6 +229,25 @@ class Simulation:
         if any(m.importance >= self.salience for m in fresh):
             return "react", block
         return "routine", block
+
+    def _before_promises(self, step: int) -> int:
+        """Shorten ``step`` so a tick lands when someone must set out for a promise.
+
+        Otherwise a long step can jump from before the lead time to after the
+        due time, and the promise is broken without anyone having had a turn.
+        """
+        state = self.session.state
+        for promise in state.open_commitments():
+            keeper = state.entities.get(promise.by)
+            lead = daily.promise_lead(state, keeper, promise) if keeper else None
+            if lead is None or promise.kind != "meet":
+                continue
+            until = int(
+                (promise.due - timedelta(minutes=lead) - state.sim_time).total_seconds() // 60
+            )
+            if 0 < until < step:
+                step = until
+        return max(1, step)
 
     def _routine_jump(self, step: int) -> tuple[int, dict[str, Intent]]:
         """Lengthen the step when everyone is on routine until a later boundary.
@@ -247,10 +279,12 @@ class Simulation:
         if pending:
             wait = int((pending[0][1] - state.sim_time).total_seconds() // 60)
             horizon = min(horizon, max(1, wait))
-        open_promises = state.open_commitments()
-        if open_promises:
-            wait = int((open_promises[0].due - state.sim_time).total_seconds() // 60)
-            horizon = min(horizon, max(1, wait - COMMITMENT_LEAD_MINUTES))
+        for promise in state.open_commitments():
+            keeper = state.entities.get(promise.by)
+            lead = daily.promise_lead(state, keeper, promise) if keeper else None
+            wait = int((promise.due - state.sim_time).total_seconds() // 60)
+            # Stop early enough that whoever promised can still set out.
+            horizon = min(horizon, max(1, wait - (lead if lead is not None else 0)))
         if horizon <= step:
             return step, {}
         intents = {}
@@ -286,12 +320,15 @@ class Simulation:
             return 0
         persona = persona_of(observer)
         who = render(observer, persona) if persona else observer.name
-        scores = await self.scorer.score(
+        worth = [o for o in kept if not mundane(o)]
+        asked = await self.scorer.score(
             who,
-            [o.text for o in kept],
+            [o.text for o in worth],
             CallContext(branch, tick_seq, observer.id),
-            addressed=[o.addressed for o in kept],
-        )
+            addressed=[o.addressed for o in worth],
+        ) if worth else []
+        by_id = {id(o): s for o, s in zip(worth, asked)}
+        scores = [by_id.get(id(o), MUNDANE_IMPORTANCE) for o in kept]
         items = [
             NewMemory(
                 kind="utterance_heard"
@@ -631,6 +668,7 @@ class Simulation:
             step = self.policy.base_minutes if self.policy else self.step_minutes
         jumped: dict[str, Intent] = {}
         if step_minutes is None:
+            step = self._before_promises(step)
             step, jumped = self._routine_jump(step)
         result.step_minutes = step
         if journal:

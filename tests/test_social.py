@@ -13,6 +13,7 @@ from tinyworld.llm.fake import FakeLLM
 from tinyworld.llm.router import LLMConfig
 from tinyworld.llm.structured import StructuredLLM
 from tinyworld.llm.trace import Tracer
+from tinyworld.agents import routine as daily
 from tinyworld.sim import commitments as pledges
 from tinyworld.sim.loop import Simulation
 from tinyworld.sim.scene import SceneTurn, openings
@@ -257,20 +258,38 @@ def test_a_promise_to_someone_now_dead_lapses():
     assert session.state.commitments["commitment:c1"].status == "released"
 
 
-def test_someone_with_a_promise_falling_due_decides_for_themselves():
+def test_a_promise_to_be_somewhere_is_carried_out_by_routine_in_time():
+    from tinyworld.agents import routine as daily
+
     session = together(toy.build_toy())
     commit(
         session,
         fx.SetAttr(entity=toy.OTTO, key="home", value=toy.TAVERN),
         fx.SetAttr(entity=toy.OTTO, key="workplace", value=toy.TOWN_HALL),
-        fx.MakeCommitment(commitment=commitment(session, due=session.state.sim_time + timedelta(hours=1))),
+        fx.MakeCommitment(
+            commitment=commitment(session, due=session.state.sim_time + timedelta(hours=1))
+        ),
     )
-    fake = world(session, {}, {"say": "", "end": True})
-    sim = Simulation(session, llm_for(session, fake), deliberate_hours=48)
-    run(sim.tick(30))
-    assert sim.mode_of(session.state.entities[toy.OTTO])[0] == "react"
-    prompt = [c for c in fake.calls if c.role == "agent.act" and c.context.agent == toy.OTTO][-1].user
-    assert "Promises outstanding" in prompt or sim.mode_of(session.state.entities[toy.OTTO])[0] == "react"
+    otto = session.state.entities[toy.OTTO]
+    # An hour ahead, the promise does not yet change the day.
+    assert daily.current_block(session.state, otto).kind != "promise"
+    lead = daily.promise_lead(session.state, otto, session.state.open_commitments()[0])
+    assert lead is not None and lead > 15
+    soon = session.state.sim_time + timedelta(hours=1) - timedelta(minutes=lead)
+    block = daily.current_block(session.state, otto, soon)
+    assert block.kind == "promise" and block.place == toy.TAVERN
+    assert block.until == session.state.open_commitments()[0].due
+    intent = daily.routine_intent(session.state, otto, block)
+    assert intent.verb.value == "move" and intent.target == toy.TAVERN
+
+
+def test_a_promise_to_give_has_no_place_to_set_out_for():
+    from tinyworld.agents import routine as daily
+
+    session = together(toy.build_toy())
+    otto = session.state.entities[toy.OTTO]
+    gift = commitment(session, kind="give", place=None, item=toy.COIN)
+    assert daily.promise_lead(session.state, otto, gift) is None
 
 
 def test_the_prompt_lists_promises_both_ways():
@@ -284,3 +303,40 @@ def test_the_prompt_lists_promises_both_ways():
 def test_scene_turn_schema_defaults_are_a_quiet_end():
     turn = SceneTurn()
     assert turn.say == "" and turn.move == "none" and not turn.end
+
+
+def test_a_step_is_cut_short_so_nobody_misses_the_time_to_set_out():
+    session = together(toy.build_toy())
+    commit(
+        session,
+        fx.MakeCommitment(
+            commitment=commitment(session, due=session.state.sim_time + timedelta(hours=2))
+        ),
+    )
+    sim = Simulation(session, None)
+    lead = daily.promise_lead(
+        session.state, session.state.entities[toy.OTTO], session.state.open_commitments()[0]
+    )
+    assert sim._before_promises(600) == 120 - lead
+    assert sim._before_promises(10) == 10
+
+
+def test_ordinary_routine_is_not_worth_a_model_call_but_speech_and_news_are():
+    from tinyworld.gm.perception import Observation
+    from tinyworld.sim.loop import mundane
+
+    def seen(text, **fields):
+        return Observation(
+            observer=toy.ANNA, event_seq=1, sim_time=session_time(), mode="visual",
+            confidence=1.0, text=text, **fields,
+        )
+
+    def session_time():
+        return toy.START
+
+    assert mundane(seen("Otto Brandt sleeps."))
+    assert mundane(seen("Lena Vogel works at Keller Bakery."))
+    assert mundane(seen("Otto Brandt goes from Town Hall to Market Square."))
+    assert not mundane(seen("Otto Brandt sleeps.", addressed=True))
+    assert not mundane(seen('Otto says: "the grain is gone".', speaker=toy.OTTO))
+    assert not mundane(seen("Otto Brandt attacks Lena Vogel."))
