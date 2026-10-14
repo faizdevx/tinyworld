@@ -1,5 +1,9 @@
 .pytest_cache
-
 __pycache__
-
 pytest.ini
+*.egg-info
+*.sqlite
+*.sqlite-*
+node_modules
+web/dist
+.tinyworld_data

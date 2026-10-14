@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tinyworld"
+version = "2.0.0.dev0"
+description = "Event-sourced generative world simulation with LLM agents"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic==2.13.5",
+    "fastapi==0.115.6",
+    "uvicorn==0.34.0",
+    "httpx==0.28.1",
+    "numpy==2.5.2",
+    "websockets==16.1.1",
+]
+
+[project.optional-dependencies]
+llm = ["anthropic==1.2.0"]
+dev = ["pytest==9.1.1"]
+
+[tool.setuptools.packages.find]
+include = ["tinyworld*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

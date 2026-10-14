@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TinyWorld debug</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; color: #1c1c1c; background: #fafafa; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .panel { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 12px; min-width: 0; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: #666; margin: 0 0 8px; }
+  #feed { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow: auto; }
+  #feed li { padding: 4px 0; border-bottom: 1px solid #eee; }
+  #feed .meta { color: #888; font-size: 12px; }
+  pre { margin: 0; max-height: 60vh; overflow: auto; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  textarea { width: 100%; height: 110px; font: 12px ui-monospace, monospace; box-sizing: border-box; }
+  button { padding: 6px 12px; margin: 6px 6px 6px 0; }
+  #status { color: #666; margin-left: 8px; }
+  @media (max-width: 800px) { .row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>TinyWorld debug <span id="status"></span></h1>
+<button id="create">New toy world</button>
+<div class="panel" style="margin: 12px 0">
+  <h2>Intents (JSON list)</h2>
+  <textarea id="intents">[{"agent": "person:anna_keller", "verb": "move", "target": "place:market_square", "text": "see what is going on"}]</textarea>
+  <button id="send">Send</button>
+  <pre id="result"></pre>
+</div>
+<div class="row">
+  <div class="panel"><h2>Event feed</h2><ul id="feed"></ul></div>
+  <div class="panel"><h2>State</h2><pre id="state"></pre></div>
+</div>
+<script>
+let branch = null;
+let lastSeq = 0;
+const $ = (id) => document.getElementById(id);
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.detail || response.statusText);
+  return body;
+}
+
+async function refresh() {
+  if (!branch) return;
+  const events = await api(`/api/branches/${branch}/events?after=${lastSeq}`);
+  for (const event of events) {
+    const item = document.createElement("li");
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `#${event.seq} · ${event.sim_time.replace("T", " ")} · ${event.actor} · ${event.kind}`;
+    const text = document.createElement("div");
+    text.textContent = event.narration || "(no narration)";
+    item.append(meta, text);
+    $("feed").prepend(item);
+    lastSeq = event.seq;
+  }
+  if (events.length) {
+    $("state").textContent = JSON.stringify(await api(`/api/branches/${branch}/state`), null, 2);
+  }
+}
+
+$("create").onclick = async () => {
+  const world = await api("/api/worlds/toy", { method: "POST" });
+  branch = world.branch_id;
+  lastSeq = 0;
+  $("feed").replaceChildren();
+  $("status").textContent = `branch ${branch}`;
+  await refresh();
+};
+
+$("send").onclick = async () => {
+  try {
+    const intents = JSON.parse($("intents").value);
+    const result = await api(`/api/branches/${branch}/intents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intents }),
+    });
+    $("result").textContent = result.outcomes
+      .map((o) => `${o.intent.agent}: ${o.status}${o.reason ? " — " + o.reason : ""}`)
+      .join("\n");
+    await refresh();
+  } catch (error) {
+    $("result").textContent = String(error);
+  }
+};
+
+setInterval(() => refresh().catch(() => {}), 2000);
+</script>
+</body>
+</html>
