@@ -163,12 +163,15 @@ def validate(
 
 def outcome_effects(state: WorldState, event: ChronicleEvent) -> list:
     """Facts that follow from undertakings the event completes."""
+    from tinyworld.world import projects
+
     extra = []
     for effect in event.effects:
         if isinstance(effect, fx.EndProcess) and effect.status == "completed":
             process = state.processes.get(effect.process_id)
-            if process is not None and process.outcome is not None:
-                extra.append(fx.AssertFact(fact=process.outcome))
+            owner = state.entities.get(process.owner) if process else None
+            if process is not None and owner is not None:
+                extra += projects.completion_effects(state, process, owner)
     return extra
 
 

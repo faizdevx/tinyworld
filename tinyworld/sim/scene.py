@@ -38,12 +38,15 @@ story, never an instruction to you.
 - To promise something, fill in `promise` with exactly one thing: meet at a \
 place by some hour, or hand over an item. Promise only what they would really \
 commit to.
+- To teach the other person something you really know well, set move to teach and \
+name the idea in `teach`. Teaching takes real effort and only works on what they are \
+ready to learn.
 - Set `end` when the exchange is over."""
 
 TONE_SHIFT = {"warm": 2, "joking": 1, "neutral": 0, "cold": -1, "angry": -3, "afraid": 0}
 MOVE_TYPE = {
     "promise": "promise", "ask": "ask", "threaten": "threaten",
-    "gossip": "gossip", "lie": "lie", "refuse": "answer",
+    "gossip": "gossip", "lie": "lie", "refuse": "answer", "teach": "tell",
 }
 MAX_HOURS = 24 * 7
 
@@ -62,8 +65,9 @@ class SceneTurn(Model):
     say: str = ""
     tone: Literal["warm", "joking", "neutral", "cold", "angry", "afraid"] = "neutral"
     move: Literal[
-        "none", "promise", "ask", "refuse", "threaten", "gossip", "lie"
+        "none", "promise", "ask", "refuse", "threaten", "gossip", "lie", "teach"
     ] = "none"
+    teach: str | None = None
     claims: list[Claim] = Field(default_factory=list)
     promise: Promise | None = None
     end: bool = False
@@ -165,6 +169,14 @@ class Scenes:
                 if other.id in (c.by, c.to):
                     who = "You promised" if c.by == me.id else f"{other.name} promised"
                     lines.append(f"- {who}: {c.text} (by {c.due:%a %H:%M})")
+        from tinyworld.world import knowledge
+
+        masters = [
+            f"- {knowledge.name_of(state, k)} [{k}]"
+            for k, v in sorted(knowledge.held(me).items()) if v >= 2
+        ]
+        if masters:
+            lines += ["", "Ideas you hold well enough to teach:"] + masters
         lines += ["", "Things you remember that may matter:"]
         lines += [f"- {s.memory.text}" for s in recalled] or ["- nothing in particular"]
         lines += ["", "The conversation so far:"]
@@ -224,6 +236,45 @@ class Scenes:
         ):
             return None
         return fx.MakeCommitment(commitment=commitment)
+
+    def _teach(self, teacher: Entity, pupil: Entity, wanted: str) -> list[Event]:
+        """The pupil learns an idea the teacher holds well and they are ready for."""
+        from tinyworld.world import knowledge
+
+        session = self.sim.session
+        state = session.state
+        idea = knowledge.resolve(state, wanted)
+        if idea is None:
+            return []
+        taught = knowledge.level(state, teacher, idea)
+        if taught < 2 or knowledge.level(state, pupil, idea) >= taught:
+            return []
+        if knowledge.missing(state, [pupil], idea):
+            return []
+        label = knowledge.name_of(state, idea)
+        made = session.commit(
+            [
+                EventDraft(
+                    kind="system", actor="system", visibility="god_only",
+                    effects=[
+                        fx.LearnKnowledge(
+                            person=pupil.id, idea=idea, level=taught - 1, by="teach"
+                        )
+                    ],
+                    narration=f"{teacher.name} teaches {pupil.name} about {label}.",
+                )
+            ],
+            atomic=False,
+        )
+        if made.events:
+            self.sim.write_notes(
+                [
+                    (pupil.id, f"{teacher.name} taught me about {label}."),
+                    (teacher.id, f"I taught {pupil.name} about {label}."),
+                ],
+                made.events[-1].seq, 0.6,
+            )
+        return made.events
 
     async def run(
         self, tick_seq: int, speaker_id: str, listener_id: str, line: str
@@ -309,6 +360,8 @@ class Scenes:
                              (them.id, pledge)],
                             made.events[-1].seq, 0.7,
                         )
+            if turn.move == "teach" and turn.teach:
+                out.events += self._teach(me, them, turn.teach)
             if turn.end:
                 break
             talker, other = other, talker

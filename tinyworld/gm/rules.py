@@ -270,6 +270,15 @@ def check(state: WorldState, intent: Intent) -> Verdict:
         # Taking from a person or from someone else's property is contested.
         return Verdict("adjudicate", preset=preset)
 
+    if verb is Verb.START:
+        from tinyworld.world import projects
+
+        begun = projects.begin(state, agent, intent.args, intent.text)
+        if isinstance(begun, str):
+            return _impossible(intent, begun)
+        effects, narration = begun
+        return _resolved(intent, preset + effects, narration, projects.START_MINUTES)
+
     if verb is Verb.WORK and intent.args.get("shift") is True:
         return _shift(state, agent, intent, preset)
 
@@ -283,13 +292,17 @@ def check(state: WorldState, intent: Intent) -> Verdict:
         minutes = _int_arg(intent, "minutes", DEFAULT_MINUTES[Verb.WORK])
         if minutes is None:
             return _impossible(intent, "minutes must be a positive whole number")
-        delta = min(1.0, minutes / process.work_minutes)
+        from tinyworld.world import projects
+
+        delta = min(
+            1.0 - process.progress,
+            minutes / process.work_minutes * projects.skill_factor(state, agent, process),
+        )
         effects = preset + [fx.AdvanceProcess(process_id=process.id, delta=delta)]
         narration = f"{agent.name} works on {process.name}."
         if process.progress + delta >= 1.0 - 1e-9:
             effects.append(fx.EndProcess(process_id=process.id, status="completed"))
-            if process.outcome is not None:
-                effects.append(fx.AssertFact(fact=process.outcome))
+            effects += projects.completion_effects(state, process, agent)
             narration = f"{agent.name} completes {process.name}."
         return _resolved(intent, effects, narration, minutes)
 

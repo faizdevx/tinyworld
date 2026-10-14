@@ -29,6 +29,7 @@ DEFAULT_ATTRS: dict[str, dict[str, object]] = {
         "tier": int,
         "persona": dict,
         "faction": str,
+        "knowledge": dict,
     },
     "place": {
         "description": str,

@@ -36,6 +36,9 @@ Actions (verb, then what to fill in):
 - give: target = person or place id; args = {"item": id, "quantity": n}
 - take: target = holder id (omit to take from the place you are in); args = {"item": id, "quantity": n}
 - work: target = an ongoing work id, or leave empty and describe the work in `text`
+- start: begin a long undertaking of your own. text = the goal; args = {"name": ..., \
+"days": n, "items": {id: n}, "helpers": [person ids], "idea": idea id, only to work out \
+a new idea}
 - trade, use, make, attack, join, leave, other: target if any; describe it in `text`
 - rest, wait: nothing else needed
 
@@ -242,6 +245,9 @@ class Agent:
         if Planner.should_reconsider(plan, [m.importance for m in new]):
             lines.append("Something has changed or you have no plan: reconsider it.")
 
+        from tinyworld.world import projects
+
+        lines += projects.lines_for(state, entity)
         if promises:
             lines += ["", "Promises outstanding:"] + promises
         if recent:

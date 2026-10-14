@@ -65,6 +65,19 @@ def level(state: WorldState, person: Entity, idea: str) -> int:
     return max(baseline, held(person).get(idea, 0))
 
 
+def discovered(state: WorldState, idea: str) -> bool:
+    """Has anyone worked this out? Undiscovered ideas are held by nobody."""
+    node = ideas(state).get(idea)
+    if node is None:
+        return False
+    if node.status != "undiscovered":
+        return True
+    return any(
+        held(person).get(idea, 0) >= 1 for person in state.entities.values()
+        if person.kind == "person"
+    )
+
+
 def missing(state: WorldState, people: list[Entity], idea: str) -> list[str]:
     """Prerequisites of ``idea`` that nobody in ``people`` holds."""
     graph = ideas(state)
@@ -79,9 +92,12 @@ def missing(state: WorldState, people: list[Entity], idea: str) -> list[str]:
 
 def resolve(state: WorldState, text: str | None) -> str | None:
     """An idea id for an id, a label, or a close paraphrase of one."""
+    return resolve_in(ideas(state), text)
+
+
+def resolve_in(graph: dict[str, Idea], text: str | None) -> str | None:
     if not text or not isinstance(text, str):
         return None
-    graph = ideas(state)
     if text in graph:
         return text
     wanted = slugify(text) if text.strip() else ""
@@ -116,30 +132,50 @@ def build(
     for label in available:
         if label.strip():
             graph[idea_id(label)] = Idea(label=label.strip(), status="common")
-    by_slug = {slugify(i.label): key for key, i in graph.items()}
+    # An idea may build on another idea not yet invented: that is a chain.
+    later = {}
     for label in not_yet:
-        if not label.strip():
-            continue
-        key = idea_id(label)
-        if key in graph:
-            continue
-        needs = []
+        if label.strip() and idea_id(label) not in graph:
+            later[idea_id(label)] = label.strip()
+    names = {slugify(i.label): key for key, i in graph.items()}
+    names.update({slugify(label): key for key, label in later.items()})
+    for key, label in later.items():
+        needs: list[str] = []
         for name in dependencies.get(label, []):
-            found = by_slug.get(slugify(name)) if name.strip() else None
-            if found and found not in needs:
+            found = names.get(slugify(name)) if name.strip() else None
+            if found and found != key and found not in needs:
                 needs.append(found)
         graph[key] = Idea(
-            label=label.strip(), requires=needs, status="undiscovered",
+            label=label, requires=needs, status="undiscovered",
             difficulty=min(5, 2 + len(needs)),
         )
+    # A cycle would make every idea in it impossible; cut the offending links.
+    for key in list(graph):
+        graph[key] = graph[key].model_copy(
+            update={"requires": [r for r in graph[key].requires if not _reaches(graph, r, key)]}
+        )
     return graph
+
+
+def _reaches(graph: dict[str, Idea], start: str, goal: str) -> bool:
+    seen: set[str] = set()
+    stack = [start]
+    while stack:
+        node = stack.pop()
+        if node == goal:
+            return True
+        if node in seen or node not in graph:
+            continue
+        seen.add(node)
+        stack.extend(graph[node].requires)
+    return False
 
 
 def pursuits(state: WorldState, person: Entity, limit: int = 4) -> list[str]:
     """Undiscovered ideas whose foundations this person already holds."""
     out = []
     for key, idea in ideas(state).items():
-        if idea.status != "undiscovered":
+        if idea.status != "undiscovered" or discovered(state, key):
             continue
         if missing(state, [person], key):
             continue
