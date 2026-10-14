@@ -196,8 +196,9 @@ model. Read the following before the screenshots above.
   (executives, a police commissioner) as characters, which is a questionable
   thing for a simulation to invent speech and secrets for. Nothing in the
   premise asked for this, and nothing stops it yet.
-- **The seeded start was thin.** 12 of 13 people lived in 12 places and the
-  review still reported people "not among the key figures" as faction leaders.
+- **Faction leaders were not among the people.** The review reported three
+  factions led by someone who is not one of the key figures, and one person
+  starting at a place that does not exist (repaired during seeding).
 
 ### Fixed afterwards
 
@@ -219,7 +220,7 @@ Short runs of the real prompts, one model call per step
 | Model | prompt | agents (3 people) | Game Master | god command | premise parse |
 |---|---|---|---|---|---|
 | `google/gemini-3.5-flash-lite` via OpenRouter | pass | pass, 0 repairs | pass | pass | pass |
-| `qwen/qwen3.7-flash` via OpenRouter | pass | pass, 13 s | pass | pass | pass |
+| `qwen/qwen3.7-flash` via OpenRouter | pass | pass, 13 s | pass | pass | pass (run with reasoning on) |
 | `gemini-2.5-flash` (Gemini API) | pass | 2 of 3 people fell back | pass | pass | pass |
 
 The Gemini fallbacks were the same missing-prefix bug as above, fixed since.
