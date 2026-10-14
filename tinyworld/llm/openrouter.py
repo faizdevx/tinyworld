@@ -60,6 +60,7 @@ class OpenRouterClient:
             if reasoning is not None
             else os.environ.get("OPENROUTER_REASONING", "off").lower() in ("on", "1", "true")
         )
+        self._reasoning_only: set[str] = set()
         self._http = http or httpx.AsyncClient(timeout=timeout)
         self.retries = retries
         self.backoff = backoff
@@ -107,16 +108,22 @@ class OpenRouterClient:
         system += "\n\nThe JSON object must match this JSON Schema:\n" + json.dumps(
             request.schema, separators=(",", ":")
         )
+        # Some models cannot run without reasoning. Learned from the first
+        # rejection, then remembered for the rest of the run.
+        forced = model in self._reasoning_only
         body: dict = {
             "model": model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": request.user},
             ],
-            "max_tokens": request.max_tokens + (REASONING_HEADROOM if self.reasoning else 0),
+            "max_tokens": request.max_tokens
+            + (REASONING_HEADROOM if (self.reasoning or forced) else 0),
             "usage": {"include": True},
         }
-        if not self.reasoning:
+        if forced and not self.reasoning:
+            body["reasoning"] = {"effort": "low"}
+        elif not self.reasoning:
             body["reasoning"] = {"enabled": False}
         if schema:
             body["response_format"] = {
@@ -187,6 +194,13 @@ class OpenRouterClient:
                 if found and int(found.group(1)) >= MIN_AFFORDABLE:
                     cap = int(found.group(1)) - 16
                     continue
+            if (
+                status == 400
+                and model not in self._reasoning_only
+                and "reasoning is mandatory" in response.text.lower()
+            ):
+                self._reasoning_only.add(model)
+                continue
             if status == 400 and position < len(formats) - 1:
                 position += 1
                 continue
