@@ -17,10 +17,17 @@ function initials(name) {
   return name.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
 }
 
-function knowledgeList(value) {
-  if (Array.isArray(value)) return value.map((v) => (typeof v === "string" ? v : v.name || v.id || JSON.stringify(v)));
-  if (value && typeof value === "object") return Object.keys(value);
-  return [];
+const LEVELS = { 3: "worked out", 2: "taught", 1: "aware" };
+
+// person.attrs.knowledge is {idea: level}; labels live in state.rules.knowledge.
+function ideas(value, graph) {
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(value)
+    .map(([id, level]) => ({
+      label: (graph && graph[id] && graph[id].label) || shortId(id),
+      level: Number(level) || 1,
+    }))
+    .sort((a, b) => b.level - a.level || a.label.localeCompare(b.label));
 }
 
 export async function showWorld(view, branchId) {
@@ -301,7 +308,7 @@ export async function showWorld(view, branchId) {
     const persona = person.persona;
     const promises = Object.values(state.commitments || {})
       .filter((c) => c.status === "open" && (c.by === id || c.to === id));
-    const known = knowledgeList(person.attrs.knowledge);
+    const known = ideas(person.attrs.knowledge, state.rules && state.rules.knowledge);
     const sure = (b) => (b.correct === false ? "bad" : b.correct === true ? "good" : "");
     const back = el("button", { class: "ghost", type: "button", onclick: () => showTab("people") }, "← People");
 
@@ -323,7 +330,10 @@ export async function showWorld(view, branchId) {
           ? el("ul", { class: "dots" }, promises.map((c) =>
               el("li", {}, c.by === id ? `to ${nameOf(c.to)}: ` : `${nameOf(c.by)} to them: `, c.text)))
           : null),
-        block("Knows how", known.length ? el("div", { class: "relchips" }, known.slice(0, 10).map((k) => el("span", { class: "chip" }, shortId(k)))) : null),
+        block("Knows how", known.length
+          ? el("div", { class: "relchips" }, known.slice(0, 10).map((k) =>
+              el("span", { class: `chip ${k.level >= 3 ? "good" : ""}`, title: LEVELS[k.level] || "" }, k.label)))
+          : null),
         block("Believes", person.beliefs.length
           ? el("ul", { class: "plain" }, person.beliefs.slice(0, 5).map((b) =>
               el("li", { class: "row", style: "flex-wrap:nowrap;gap:8px;align-items:baseline" },
