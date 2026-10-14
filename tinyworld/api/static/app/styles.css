@@ -71,7 +71,9 @@ a { color: var(--accent); }
 .crumbs a:hover { color: var(--ink); }
 .crumbs span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
 .crumbs span + span::before { content: "·"; margin-right: 6px; }
-.mode { font-size: 12px; color: var(--warn); }
+.mode { font-size: 12px; color: var(--warn); display: flex; gap: 8px; align-items: center; }
+.mode input, .mode select { font-size: 12px; padding: 4px 6px; }
+button.link { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: 12px; }
 
 main { flex: 1; min-height: 0; overflow: auto; }
 .page { max-width: 760px; margin: 0 auto; padding: 36px 18px 64px; }

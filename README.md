@@ -39,8 +39,13 @@ People now live a day instead of being asked what to do every hour.
 <img src="docs/images/v3-change.jpg" width="49%" alt="Changing the world in a sentence">
 </p>
 
-These screenshots are the **offline demo**: the Berlin bible with scripted
-agents, not a real model. They show the interface and the mechanics. They are not
+<p>
+<img src="docs/images/v3-lucknow-bible.jpg" width="49%" alt="Lucknow without Jio: the prepared world">
+<img src="docs/images/v3-lucknow-world.jpg" width="49%" alt="Lucknow: people moving between the lanes of the old city">
+</p>
+
+These screenshots are the **offline demo**: prepared worlds (Berlin 1941 and
+Lucknow 2016 without Jio) with scripted agents, not a real model. They show the interface and the mechanics. They are not
 evidence that a model produces interesting lives; that still has to be shown on a
 live run (see [Results so far](#results-so-far)).
 
@@ -89,8 +94,16 @@ Open <http://127.0.0.1:8000>. Worlds are kept in `.tinyworld_data/worlds.sqlite`
 your premise, researches it on Wikipedia, writes and reviews the bible, and the
 agents, Game Master, god parser and chronicler all run on the model.
 
-**Without a model** the server runs an offline demo: genesis returns a prepared
-bible for the Berlin premise whatever you type, and agents follow simple rules.
+**Without a model** the server runs an offline demo. Genesis picks the prepared
+world that fits your words (Lucknow if you mention Lucknow, Jio or India;
+Berlin for German or Soviet premises) and says which one it used. A premise that
+fits neither gets the Berlin world, and the page says plainly that it was not
+built from your text. Agents follow simple rules.
+
+**Adding a key from the page.** The top right shows "Add a model key" when no
+model is configured. Pick a provider and paste the key. The server keeps it in
+memory only: it is not written to a file, the database or the log, and it is
+gone when the server stops. After that, new worlds are built by the model.
 Everything else — the map, god commands in a small fixed syntax, time skips,
 forks, history — works the same. It is for trying the application, not for
 judging how interesting a world is.

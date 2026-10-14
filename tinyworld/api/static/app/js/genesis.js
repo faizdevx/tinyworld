@@ -198,7 +198,15 @@ export async function showGenesis(view, worldId) {
     setCrumbs([[world.premise.split("\n")[0].slice(0, 60), null]]);
     fill(head, 
       el("h1", {}, world.premise.split("\n")[0]),
-      world.offline ? el("span", { class: "chip warn" }, "prepared example") : null);
+      world.offline
+        ? el("span", { class: "chip warn" }, world.prepared && world.prepared.matched
+          ? `prepared world: ${world.prepared.label}` : "prepared example")
+        : null,
+      world.offline && world.prepared && !world.prepared.matched
+        ? el("p", { class: "muted" },
+          "No model key is set, so this is a prepared world, not one built from what "
+          + "you typed. Add a key at the top right to build your own.")
+        : null);
     renderProgress(world.genesis);
     renderQuestions(world.genesis);
     renderFindings(world.genesis.findings);
