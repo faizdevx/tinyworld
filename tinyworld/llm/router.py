@@ -63,6 +63,8 @@ DEFAULT_ROLES = {
     "critic": "strong",
     "god.": "strong",
     "gm.conflict": "strong",
+    "studio.lead": "strong",
+    "studio.": "standard",
     "agent.act": "standard",
     "agent.act.tier1": "cheap",
     "agent.scene": "standard",

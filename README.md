@@ -20,6 +20,52 @@ institutions and factions, scarce things and live tensions. Then it runs.
 
 Contents: [How well it works](#how-well-it-works) · [What you can do](#what-you-can-do-with-it) · [System design](#system-design) · [Roadmap](#roadmap) · [Running it](#running-it)
 
+## v6: the studio
+
+You do not just watch a world any more. You give a goal, and a **team of agents
+builds the world while you watch**, asks you when a decision is yours, and lands
+nothing until you press **Merge**. Then the residents live in it.
+
+<p>
+<img src="docs/images/v6-studio-working.jpg" width="49%" alt="Two researchers at the web station; the task graph on the right">
+<img src="docs/images/v6-studio-question.jpg" width="49%" alt="The lead asks you a question at the podium">
+</p>
+<p>
+<img src="docs/images/v6-studio-merge.jpg" width="49%" alt="The draft is complete; Merge, Request changes or Reject">
+<img src="docs/images/v6-studio-merged.jpg" width="49%" alt="Merged: ready to seed the world">
+</p>
+
+- **A cast, each with a job.** Marlow leads and plans. Iris and Ash research.
+  Juno draws the map, Sage writes history and politics, Otto the economy and
+  technology, Wren the people and factions. Vera reviews and sends sections
+  back.
+- **Real tools.** They search the web, read pages, keep shared notes, write
+  sections that are checked against the real schema, and ask you questions.
+  What an agent is doing is read from the tools it uses, not from what it says.
+- **A task graph.** Figures wait for the geography and factions; tensions wait
+  for figures. Up to three tasks run at once.
+- **You are in the loop.** Questions and the final merge arrive at a podium.
+  Request changes, with your note, puts the team back to work. Reject changes
+  nothing.
+- **Closing the page loses nothing.** The foreman keeps the state; the page is
+  only a window.
+- **Works with no model.** Without a key a scripted team plays the same roles
+  with the same protocol, so the whole studio runs and can be demoed.
+
+```bash
+python -m tinyworld.api.app          # then "Build with the team" on the home page
+```
+
+**Honest status.** The studio is built and tested with the scripted team and
+with scripted-model tests, and checked in a browser. **It has not been run with a
+real model yet**, so how well hosted or open-weight models drive the tool loop
+is unmeasured. The plan, with what each step must prove, is in
+[docs/V6_PLAN.md](docs/V6_PLAN.md). The design follows
+[AgentCraft](https://github.com/blendi-remade/agentcraft): a foreman that owns
+the truth, a view that holds none, agents that use tools, a decision queue, and
+a human merge gate. It differs in building worlds that then run, in recording
+every call so a run replays, in working with any model, and in being a web page.
+
 ## How well it works
 
 Read this first. It says what has been seen working on a real model, what has
@@ -27,6 +73,7 @@ only been shown on scripted stand-ins, and what is not built.
 
 | Part | Status | Evidence |
 |---|---|---|
+| The studio: a team of tool-using agents builds the world, you merge it | **Built (v6.0)**, scripted team and scripted-model tests, checked in a browser | **Not run with a real model.** The tool loop, task graph, decision queue, draft and merge gate are tested end to end. |
 | Premise to world bible | **Works live**, slow | Lucknow 2016 on OpenRouter: 12 places, 13 people, 6 factions, 28 model calls, about 10 minutes. Gandhi premise: premise, divergence and 7 sources worked; stopped at drafting when the account ran out of credit. |
 | Seeding and the event log | **Works** | Invariants held over every run; a recorded run replays to an identical log with **0** model calls (54 of 54 events). |
 | Agents deciding, Game Master, god command | **Passes smoke tests live**, not seen in a long live run | One real call per step validated against the real schema on three models. A complete live run was cut short by an expired key. |
@@ -430,12 +477,13 @@ tinyworld/
   gm/        verbs, rules, adjudicator, conflicts, perception, master
   agents/    persona, memory, retrieval, beliefs, reflection, planner, routine, agent
   world/     knowledge graph, projects
+  studio/    protocol, task graph, state, agent session, foreman (team), scripted team
   genesis/   bible, research (agent), web, critic, seeding, pipeline
   god/       parser, feasibility, compiler, channel
   sim/       loop, scene, commitments, tiers, scheduler, budget, chronicler, timeskip, replay
   eval/      invariants, anachronism, judge, divergence, metrics, report, scenario, distill
   fixtures/  prepared worlds: berlin, lucknow, toy
-  api/       app, hub, runner, views, static/app
+  api/       app, hub, runner, studio_routes, views, static/app
 ```
 
 ## Tests
@@ -444,7 +492,7 @@ tinyworld/
 python -m pytest -q
 ```
 
-387 tests. Set `TINYWORLD_DEBUG=1` to check every committed event against the
+406 tests. Set `TINYWORLD_DEBUG=1` to check every committed event against the
 invariants as the tests run; CI does this.
 
 ## Results so far
