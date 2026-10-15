@@ -33,7 +33,10 @@ only been shown on scripted stand-ins, and what is not built.
 | Days that run on routine | **Works with scripted agents** | Offline Berlin demo, 39 simulated hours, 10 people: model calls per simulated day 1,140 down to 460 to 530. |
 | Conversations and promises | **Works with scripted agents** | 22 of 22 promises kept over four offline runs (1 of 10 before the fix). This shows the mechanism, not that a model keeps promises. |
 | Knowledge and projects | **Works, covered by tests**, never seen live | A person can start a project, a discovery needs its foundations, finishing teaches the workers. |
-| Real people in a bible | **Not guarded** | The Lucknow bible included real, named executives as characters. Nothing stops this yet. |
+| Open-weight models (any OpenAI-compatible server: vLLM, Ollama, llama.cpp) | **Built (v4), tested against a simulated server only** | Request shape, constraint step-down, reasoning-block stripping, adaptive concurrency and error handling are tested. It has **not** been run against a real vLLM or Ollama server. |
+| Research agent with web search | **Built (v4)**, web search works live | DuckDuckGo returned results and page text with no key. The read, find gaps, search again loop is tested with a scripted model, not yet run live end to end. |
+| Genesis in parallel waves | **Built (v4)**, measured on a simulated delay | 13 calls either way; with 0.25 s per call, 3.40 s sequential against 2.09 s in waves. Not timed on a real model. |
+| Real people in a bible | **Guarded by the reviewer (v4)**, not seen live | The reviewer prompt and the figures brief now forbid living public figures, and a `real_person` finding blocks and triggers a redraft. Tested with a scripted reviewer. |
 | Persona change, year-by-year skips, factions that decide, outside news | **Not built** | Planned in [docs/V3_PLAN.md](docs/V3_PLAN.md). |
 
 The honest summary: **building a world from a sentence works on a real model.
@@ -223,7 +226,9 @@ mouth) and remember it. The Game Master sits between every pair.
 | Memory scoring | **Parallel per witness.** A witness keeps at most 8 observations a tick; routine ones cost no call. | `attention_limit` |
 | Reflection, compaction | **Parallel** for whoever is due. | threshold |
 | Branches | **Independent.** Each has its own runner; they share a process, not state. | one process |
-| Genesis | **Sequential**, stage by stage and section by section. This is why a world takes about 10 minutes. | planned: parallel |
+| Research | **Parallel (v4).** Every query is searched at once, then every new page is read and noted at once, then the research agent reviews its notes and may search again (up to 3 rounds). | 6 at a time |
+| Genesis sections | **Parallel in waves (v4).** Geography, politics, economy, technology, culture and factions together; then figures (they need places and factions); then tensions (they are between figures). | 3 waves instead of 8 steps |
+| Genesis stages | **Sequential**: premise, divergence, queries, research, sections, review, digest. | each needs the last |
 | Time skips | **Sequential** per period. | planned: per agent per year |
 
 So the honest answer to "how many agents are connected": any number can be due
@@ -250,31 +255,28 @@ personas. Not yet shown.
 
 ### v4: open-weight models, and a cheaper, faster platform
 
-The aim is to run the whole thing on models you can host yourself.
+The aim is to run the whole thing on models you can host yourself, with every
+system role an agent that can use tools.
 
-- **Open-weight routing.** Run Llama, Qwen, Gemma, Mistral or DeepSeek models
-  through vLLM, Ollama or OpenRouter, chosen per role in one config. Genesis, the
-  critic and god commands on the strongest model; routine reactions, importance
-  scoring and summaries on a small local one.
-- **Distilling the cheap calls.** Collect the replies that judges and human
-  labels rated well, fine-tune a small open model with LoRA, and route
-  reactions and scene turns to it. Keep it only if judged believability drops
-  by less than a set margin.
-- **Constrained decoding for weak models.** Grammar or JSON-schema decoding so
-  small models stop failing schemas, instead of retrying.
-- **Parallel genesis.** Research queries and the eight sections run together;
-  only failing sections are redrafted. Target: a world in minutes, not ten.
-- **Real-person guard.** Living people are replaced with invented counterparts or
-  kept off-screen; historical figures are labelled.
-- **Platform.** Postgres with vector search, a job queue, one worker per
-  running branch, sign-in, and a budget on by default.
-- **A live benchmark.** Several premises and seeds on a real model, measuring
-  goals pursued, waiting, rule rejections, anachronisms and divergence between
-  runs, tracked over time.
+| Item | State |
+|---|---|
+| Client for any OpenAI-compatible server, with adaptive concurrency | **Built**, tested against a simulated server |
+| Tier config for open-weight models (`LOCAL_MODEL_*`), key-less connect from the page | **Built** |
+| Research agent: parallel search, read, find gaps, search again | **Built**, scripted-model tests |
+| Web search and page fetch, with a public-address guard | **Built**, search checked live |
+| Genesis sections in dependency waves | **Built**, measured on a simulated delay |
+| Real-person guard in the reviewer | **Built**, scripted-reviewer tests |
+| Export of recorded calls as fine-tuning data (`python -m tinyworld.eval.distill`) | **Built**, unfiltered: judge a sample before training |
+| Run a world end to end on an open-weight model | **Not done.** No local model server was available to test against. |
+| Fine-tune and serve a small model for routine calls, and check it against the judge | Not done |
+| Constrained decoding (grammar) for weak models | Partly: the schema is sent as `json_schema`, then `guided_json`, then `json_object` |
+| Parallel time skips (one call per person per year) | Not done |
+| Postgres, a job queue, one worker per branch, sign-in | Not done |
+| A live benchmark across premises and seeds | Not done |
 
 **Ends when:** a world is built and run end to end on open-weight models only,
 at least 5 times cheaper per simulated day than the hosted baseline, with
-judged quality inside the set margin.
+judged quality inside the set margin. Not met.
 
 ### v5: diversity
 
@@ -334,6 +336,30 @@ model is configured. Pick a provider and paste the key. It is checked with one
 small call, then held in the server's memory only: not written to a file, the
 database or the log, and gone when the server stops.
 
+**Open-weight models (v4).** Any server that speaks the OpenAI chat-completions
+protocol works: Ollama, vLLM, llama.cpp's server, LM Studio, TGI. Point the app
+at it and name a model for each tier:
+
+```bash
+# Ollama
+ollama pull qwen2.5:14b-instruct
+export LOCAL_BASE_URL=http://localhost:11434/v1
+export LOCAL_MODEL_STRONG=qwen2.5:14b-instruct LOCAL_MODEL_STANDARD=qwen2.5:14b-instruct LOCAL_MODEL_CHEAP=qwen2.5:7b-instruct
+python -m tinyworld.api.app
+
+# vLLM
+vllm serve Qwen/Qwen2.5-14B-Instruct --port 8000
+export LOCAL_BASE_URL=http://localhost:8000/v1 LOCAL_MODEL_STANDARD=Qwen/Qwen2.5-14B-Instruct
+```
+
+`TINYWORLD_PROVIDER=local` forces it. `LOCAL_API_KEY` is optional. The page's
+"Add a model key" box also takes a server address. Concurrency starts at
+`LOCAL_CONCURRENCY` (default 4) and adapts: it grows after a run of successes
+and halves when the server answers 429 or times out, up to
+`LOCAL_MAX_CONCURRENCY` (default 32). Reasoning models' `<think>` blocks are
+stripped. A model the server does not have stops the run with its name in the
+error. Costs read as $0 unless you give prices in the config file.
+
 **OpenRouter.** Choose models per tier with `OPENROUTER_MODEL_STRONG`,
 `_STANDARD`, `_CHEAP`. Hidden reasoning is off by default
 (`OPENROUTER_REASONING=on` enables it); it made calls about six times slower
@@ -347,6 +373,11 @@ models are often rate limited upstream.
 `_CHEAP`. No Gemini prices are built in, so cost shows as $0 and a budget cap
 will not trip until you add prices to the JSON file named by
 `TINYWORLD_LLM_CONFIG`.
+
+**Web search.** With a model, research uses Wikipedia and DuckDuckGo together
+(no key). Set `TINYWORLD_WEB_SEARCH=off` for Wikipedia only. Fetched pages are
+limited to public http and https addresses, reduced to plain text, and only
+ever shown to the model as quoted material to take notes from.
 
 A rejected key, or no credit, stops the run with an error instead of letting
 everyone quietly "wait". Which model each role uses is set in
@@ -394,14 +425,15 @@ and [docs/V3_PLAN.md](docs/V3_PLAN.md).
 ```
 tinyworld/
   core/      ids, time, state, effects, events, reducers, store, session, branches, causes
-  llm/       clients, router, structured calls, trace and replay, ledger, fake, offline
+  llm/       clients (anthropic, openrouter, gemini, openai_compat), limiter, router,
+             structured calls, trace and replay, ledger, fake, offline
   gm/        verbs, rules, adjudicator, conflicts, perception, master
   agents/    persona, memory, retrieval, beliefs, reflection, planner, routine, agent
   world/     knowledge graph, projects
-  genesis/   bible, research, critic, seeding, pipeline
+  genesis/   bible, research (agent), web, critic, seeding, pipeline
   god/       parser, feasibility, compiler, channel
   sim/       loop, scene, commitments, tiers, scheduler, budget, chronicler, timeskip, replay
-  eval/      invariants, anachronism, judge, divergence, metrics, report, scenario
+  eval/      invariants, anachronism, judge, divergence, metrics, report, scenario, distill
   fixtures/  prepared worlds: berlin, lucknow, toy
   api/       app, hub, runner, views, static/app
 ```
@@ -412,7 +444,7 @@ tinyworld/
 python -m pytest -q
 ```
 
-363 tests. Set `TINYWORLD_DEBUG=1` to check every committed event against the
+387 tests. Set `TINYWORLD_DEBUG=1` to check every committed event against the
 invariants as the tests run; CI does this.
 
 ## Results so far
@@ -512,7 +544,9 @@ spread across several runs of the same premise.
 - Long runs on a real model have not been judged. How lively, consistent and
   period-true the worlds are is unmeasured; `POST /api/branches/{id}/judge` and
   the divergence tools exist for that.
-- Real, living people can appear as characters. There is no guard yet.
+- Real, living people can still appear as characters if the reviewer misses
+  them; the guard is a prompt and a blocking finding, not a list.
+- Open-weight support has not been run against a real model server.
 - Research uses Wikipedia's public API only; coverage is shallow.
 - The anachronism check is keyword-based.
 - The map is a graph on a canvas, not tiles or sprites.

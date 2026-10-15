@@ -43,17 +43,32 @@ function keyForm(box) {
   const provider = el("select", { "aria-label": "Provider" },
     el("option", { value: "openrouter" }, "OpenRouter"),
     el("option", { value: "gemini" }, "Gemini"),
-    el("option", { value: "anthropic" }, "Anthropic"));
+    el("option", { value: "anthropic" }, "Anthropic"),
+    el("option", { value: "local" }, "Local model (open weights)"));
   const key = el("input", {
     type: "password", placeholder: "API key", autocomplete: "off",
     "aria-label": "API key",
+  });
+  // An open-weight model runs on a server you control; it needs an address,
+  // and often no key at all.
+  const address = el("input", {
+    type: "text", placeholder: "http://localhost:11434/v1", autocomplete: "off",
+    "aria-label": "Model server address", hidden: true,
+  });
+  provider.addEventListener("change", () => {
+    const local = provider.value === "local";
+    address.hidden = !local;
+    key.placeholder = local ? "API key (optional)" : "API key";
   });
   const go = el("button", { class: "primary", type: "button" }, "Connect");
   const note = el("span", { class: "muted small" }, "kept in memory, never saved");
   go.addEventListener("click", async () => {
     go.disabled = true;
     try {
-      await api("/connect", { method: "POST", body: { provider: provider.value, key: key.value } });
+      await api("/connect", {
+        method: "POST",
+        body: { provider: provider.value, key: key.value, base_url: address.value || null },
+      });
       toast("Connected. New worlds are built by the model.");
       key.value = "";
       location.reload();
@@ -62,7 +77,7 @@ function keyForm(box) {
       go.disabled = false;
     }
   });
-  fill(box, provider, key, go, note);
+  fill(box, provider, address, key, go, note);
 }
 
 async function showMode() {

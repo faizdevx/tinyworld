@@ -190,7 +190,9 @@ class Tensions(Model):
 
 # -- stage 5 and digest ------------------------------------------------------
 
-FindingKind = Literal["contradiction", "anachronism", "unmotivated_change", "gap"]
+FindingKind = Literal[
+    "contradiction", "anachronism", "unmotivated_change", "gap", "real_person"
+]
 
 
 class Finding(Model):
@@ -265,7 +267,9 @@ SECTION_BRIEFS = {
     "with rough counts.",
     "factions": "The organised or informal groups with competing aims.",
     "figures": "8 to 14 individual people who will act on their own. Give each "
-    "conflicting goals, real fears and a secret where it fits. Their `home` and "
+    "conflicting goals, real fears and a secret where it fits. Invent every person: "
+    "do not use real, living public figures, and use a historical figure only if the "
+    "premise names them. Their `home` and "
     "`location` must be places from the geography section, and `faction` a "
     "faction name or empty. `knows` and `does_not_know` bound what this person "
     "could know given their era, class and schooling. Include relations between them.",

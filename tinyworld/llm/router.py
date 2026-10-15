@@ -47,6 +47,14 @@ OPENROUTER_TIERS = {
     "cheap": "google/gemini-3.5-flash-lite",
 }
 
+# Open-weight models served locally (Ollama names; any name your server knows
+# works). Set LOCAL_MODEL_STRONG, _STANDARD, _CHEAP to change them.
+LOCAL_TIERS = {
+    "strong": "qwen2.5:32b-instruct",
+    "standard": "qwen2.5:14b-instruct",
+    "cheap": "qwen2.5:7b-instruct",
+}
+
 DEFAULT_EFFORT = {"strong": "high", "standard": "medium", "cheap": "low"}
 
 # Longest matching prefix wins. "*" is the default.
@@ -110,6 +118,19 @@ class LLMConfig:
         return cls(tiers=tiers, prices={})
 
     @classmethod
+    def local(cls) -> "LLMConfig":
+        """Tiers on open-weight models behind an OpenAI-compatible server.
+
+        No prices: a local model costs nothing per token. Give prices in the
+        config file to make budgets and cost figures meaningful for a rented GPU.
+        """
+        tiers = {
+            tier: os.environ.get(f"LOCAL_MODEL_{tier.upper()}", default)
+            for tier, default in LOCAL_TIERS.items()
+        }
+        return cls(tiers=tiers, prices={})
+
+    @classmethod
     def load(
         cls, path: str | Path | None = None, *, provider: str = "anthropic"
     ) -> "LLMConfig":
@@ -117,6 +138,7 @@ class LLMConfig:
         config = (
             cls.gemini() if provider == "gemini"
             else cls.openrouter() if provider == "openrouter"
+            else cls.local() if provider == "local"
             else cls()
         )
         path = path or os.environ.get("TINYWORLD_LLM_CONFIG")

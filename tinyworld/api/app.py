@@ -35,7 +35,8 @@ class IntentsRequest(BaseModel):
 
 class ConnectRequest(BaseModel):
     provider: str
-    key: str
+    key: str = ""
+    base_url: str | None = None
 
 
 class WorldRequest(BaseModel):
@@ -134,7 +135,7 @@ def create_app(hub: Hub | None = None) -> FastAPI:
         """Use a model key from now on. Held in memory only, never written."""
         hub = the_hub()
         try:
-            await hub.connect(request.provider, request.key)
+            await hub.connect(request.provider, request.key, request.base_url)
         except LLMFatal as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
         except ValueError as exc:
