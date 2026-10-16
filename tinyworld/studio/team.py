@@ -223,6 +223,8 @@ class Foreman:
         # changes are capped.
         self._auto_fixed = False
         self._change_rounds = 0
+        self._repaired = False
+        self._repairs: list[str] = []
         # Sections each review task has already sent back.
         self._fixes_asked: dict[str, set[str]] = {}
         # The result ids of each task's last search, so "fetch the first one" works.
@@ -299,6 +301,8 @@ class Foreman:
         self._auto_fixed = False
         self._change_rounds = 0
         self._questions = 0
+        self._repaired = False
+        self._repairs = []
         brief = f"The premise to build a world from:\n{goal_text}"
         if live:
             brief = (
@@ -1237,6 +1241,33 @@ class Foreman:
             studio.log("marlow", "conflict", ", ".join(changed))
             await self.run()
             return
+        # Bookkeeping first, by rule and in the open: undefined resources, homes
+        # that are not places, links to nowhere.
+        if not self._repaired:
+            self._repaired = True
+            from tinyworld.studio.repair import repair
+
+            fixed, repairs = repair(studio.data.draft)
+            if repairs:
+                bibles = BibleStore(self.store)
+                for section, content in fixed.items():
+                    if section not in ARTIFACTS or content == studio.data.draft.get(section):
+                        continue
+                    try:
+                        valid = ARTIFACTS[section].model_validate(content)
+                    except ValidationError:
+                        continue
+                    studio.data.draft[section] = valid.model_dump(mode="json")
+                    if studio.data.draft_version:
+                        bibles.put_at(self.world_id, studio.data.draft_version, section, valid)
+                    studio.emit("draft.upsert", section=section)
+                self._repairs = repairs
+                studio.save()
+                studio.say(
+                    f"Repaired {len(repairs)} bookkeeping problem(s) by rule: "
+                    + "; ".join(repairs[:4]) + ("…" if len(repairs) > 4 else ""),
+                    "vera", "system",
+                )
         bible = self._draft_bible()
         blocking_now = [f for f in critic.check(bible) if f.blocking]
         if blocking_now and not self._auto_fixed:
@@ -1280,6 +1311,7 @@ class Foreman:
             f"{len(bible.figures.figures)} people, {len(bible.factions.factions)} factions. "
             + (f"{len(blocking)} blocking problem(s) remain." if blocking else "No blocking problems.")
             + "\n" + report.line()
+            + (f"\nRepaired by rule: {len(self._repairs)} bookkeeping problem(s)." if self._repairs else "")
             + "\n" + diffing.summary(diffs)
         )
         options = list(MERGE_OPTIONS)

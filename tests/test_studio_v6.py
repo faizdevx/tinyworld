@@ -1169,25 +1169,64 @@ def test_a_flagged_draft_in_automatic_mode_is_merged_with_a_logged_override_not_
     assert any(a.actor == "auto" and a.action == "override" for a in studio.data.audit)
 
 
-def test_problems_found_by_the_checks_go_back_to_their_writers_once():
-    class BadHomes(ScriptedTeam):
+def test_bookkeeping_is_repaired_by_rule_and_judgement_goes_back_to_the_writer_once():
+    class Sloppy(ScriptedTeam):
         async def complete(self, request, model, effort):
             result = await super().complete(request, model, effort)
             if "SECTION: figures" in request.user and '"write_section"' in result.text and "Fix figures" not in request.user:
                 step = json.loads(result.text)
                 for f in step["args"]["content"]["figures"]:
-                    f["home"] = "Nowhere Street"
+                    f["home"] = "Nowhere Street"   # bookkeeping: repaired by rule
+                step["args"]["content"]["figures"][0]["goals"] = []  # judgement: back to the writer
                 result.text = json.dumps(step)
             return result
 
-    store, world, studio, foreman = build(client=BadHomes(ask=False), auto=True)
+    store, world, studio, foreman = build(client=Sloppy(ask=False), auto=True)
 
     async def drive():
         foreman.submit(GOAL)
         await foreman.wait()
 
     run(drive())
+    feed = " ".join(f.text for f in studio.data.feed)
+    assert "bookkeeping problem(s) by rule" in feed and "Nowhere Street" in feed
     fixes = [t for t in studio.graph.all() if t.title.startswith("Fix figures:") and "found by the checks" in t.title]
-    assert len(fixes) == 1 and "Nowhere Street" in fixes[0].description
+    assert len(fixes) == 1 and "no goals" in fixes[0].description
     assert studio.data.goal.status == "merged"
     assert all(f["home"] != "Nowhere Street" for f in studio.data.draft["figures"]["figures"])
+
+
+def test_bookkeeping_problems_are_repaired_by_rule_and_listed():
+    from tinyworld.genesis import critic
+    from tinyworld.genesis.bible import Bible
+    from tinyworld.studio.repair import repair
+
+    draft = {
+        "geography": {"places": [
+            {"name": "Chowk Market", "connects_to": [{"to": "Aminabad"}, {"to": "The Moon"}]},
+            {"name": "Aminabad"},
+            {"name": "Riverside Ghat"},
+        ]},
+        "economy": {"resources": [{"name": "rupee"}], "stocks": [
+            {"holder": "chowk market", "resource": "cloth", "quantity": 5},
+            {"holder": "Atlantis", "resource": "gold", "quantity": 1},
+        ]},
+        "factions": {"factions": [{"name": "Traders Association"}]},
+        "figures": {"figures": [
+            {"name": "Asha", "age": 40, "home": "Chowk", "summary": "s", "goals": ["g"],
+             "faction": "the traders", "possessions": [{"holder": "Asha", "resource": "tea", "quantity": 2}]},
+        ]},
+    }
+    fixed, notes = repair(draft)
+    asha = fixed["figures"]["figures"][0]
+    assert asha["home"] == "Chowk Market" and asha["faction"] == "Traders Association"
+    names = [r["name"] for r in fixed["economy"]["resources"]]
+    assert "tea" in names and "cloth" in names and "gold" not in names
+    assert [s["holder"] for s in fixed["economy"]["stocks"]] == ["Chowk Market"]
+    links = [l["to"] for l in fixed["geography"]["places"][0]["connects_to"]]
+    assert links == ["Aminabad"]
+    assert any("connected Riverside Ghat" in n for n in notes)
+    assert any("dropped a link" in n and "The Moon" in n for n in notes)
+    before = [f for f in critic.check(Bible.model_validate(draft)) if f.blocking]
+    after = [f for f in critic.check(Bible.model_validate(fixed)) if f.blocking]
+    assert len(after) < len(before)
