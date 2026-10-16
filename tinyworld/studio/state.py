@@ -14,7 +14,7 @@ from pydantic import Field
 from tinyworld.core.state import Model
 from tinyworld.core.store import Store
 from tinyworld.studio.protocol import (
-    Agent, Decision, FeedItem, Goal, MemoryEntry, message,
+    Agent, AuditEntry, Decision, FeedItem, Goal, MemoryEntry, message,
 )
 from tinyworld.studio.taskgraph import TaskGraph
 
@@ -33,6 +33,19 @@ class Saved(Model):
     draft: dict[str, dict] = Field(default_factory=dict)
     counters: dict[str, int] = Field(default_factory=dict)
     merged_version: int | None = None
+    # The live world as it was when the goal began, to notice if it moved under us.
+    base_hash: str = ""
+    base_live: dict[str, dict] = Field(default_factory=dict)
+    # Web domains the user said "always allow" for, and what the team did outside the draft.
+    allowed_domains: list[str] = Field(default_factory=list)
+    audit: list[AuditEntry] = Field(default_factory=list)
+    # Messages waiting for an agent, delivered at its next step.
+    inbox: dict[str, list[str]] = Field(default_factory=dict)
+    # The answers given to decisions, in order, so a build can be replayed.
+    answers: list[str] = Field(default_factory=list)
+    # How many pages and searches each goal may use.
+    fetches: int = 0
+    searches: int = 0
 
 
 class Bus:
@@ -138,6 +151,47 @@ class Studio:
             draft_sections=sorted(self.data.draft),
         )
 
+    # -- spend, audit, messages ----------------------------------------
+
+    def spend(self) -> tuple[float, int]:
+        """(dollars, calls) recorded for this studio."""
+        row = self.store.query(
+            "SELECT COALESCE(SUM(cost),0) c, COUNT(*) n FROM llm_calls WHERE branch_id=?",
+            (self.world_id,),
+        )[0]
+        return float(row["c"]), int(row["n"])
+
+    def spend_of(self, agent_id: str) -> tuple[float, int]:
+        """(dollars, calls) for one agent. Its calls are recorded as ``agent:task``."""
+        row = self.store.query(
+            "SELECT COALESCE(SUM(cost),0) c, COUNT(*) n FROM llm_calls "
+            "WHERE branch_id=? AND (agent=? OR agent LIKE ?)",
+            (self.world_id, agent_id, agent_id + ":%"),
+        )[0]
+        return float(row["c"]), int(row["n"])
+
+    def log(self, actor: str, action: str, detail: str = "") -> AuditEntry:
+        entry = AuditEntry(
+            id=self._next("a"), actor=actor, action=action, detail=detail[:300],
+            at=self._now(),
+        )
+        self.data.audit.append(entry)
+        self.data.audit = self.data.audit[-500:]
+        self.emit("audit.add", entry=entry.model_dump(mode="json"))
+        return entry
+
+    def send(self, to: str, text: str, sender: str) -> None:
+        """Leave a message for an agent. It reads it at its next step, even mid-task."""
+        self.data.inbox.setdefault(to, []).append(f"{sender}: {text}")
+        self.say(f"to {to}: {text}", None if sender == "you" else sender, "say")
+        self.save()
+
+    def take_messages(self, agent_id: str) -> list[str]:
+        waiting = self.data.inbox.pop(agent_id, [])
+        if waiting:
+            self.save()
+        return waiting
+
     # -- goal -----------------------------------------------------------
 
     def set_goal(self, text: str) -> Goal:
@@ -184,6 +238,7 @@ class Studio:
         self.emit("task.upsert", task=task.model_dump(mode="json"))
         if self.data.goal is not None:
             self.data.goal.progress = round(self.graph.progress(), 3)
+            self.data.goal.spent = round(self.spend()[0], 6)
             self.emit("goal.upsert", goal=self.data.goal.model_dump(mode="json"))
         self.save()
 
@@ -209,6 +264,15 @@ class Studio:
         self.emit("memory.upsert", entry=entry.model_dump(mode="json"))
         self.save()
         return entry
+
+    def forget(self, entry_id: str) -> bool:
+        before = len(self.data.memory)
+        self.data.memory = [m for m in self.data.memory if m.id != entry_id]
+        if len(self.data.memory) == before:
+            return False
+        self.emit("memory.remove", id=entry_id)
+        self.save()
+        return True
 
     def recall(self, agent_id: str, query: str = "", limit: int = 8) -> list[MemoryEntry]:
         words = [w for w in query.lower().split() if len(w) > 2]
@@ -249,6 +313,7 @@ class Studio:
         decision.status = "answered"
         decision.answer = option or text
         decision.note = text
+        self.data.answers.append(decision.answer)
         self.emit("decision.upsert", decision=decision.model_dump(mode="json"))
         waiter = self._waiters.pop(decision_id, None)
         if waiter is not None and not waiter.done():

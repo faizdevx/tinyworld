@@ -365,6 +365,7 @@ def test_answering_twice_or_with_a_made_up_option_is_refused():
 
 
 def test_the_studio_api_builds_a_world_with_no_model_and_the_user_merges_it(monkeypatch):
+    monkeypatch.setenv("TINYWORLD_SIM_DELAY", "0")
     import time
 
     from fastapi.testclient import TestClient

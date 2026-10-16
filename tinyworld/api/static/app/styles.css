@@ -285,3 +285,18 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .group h3 { margin: 10px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .ok { color: var(--good); }
 @media (max-width: 900px) { .studio { grid-template-columns: 1fr; height: auto; } }
+
+.console { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.console-in { width: 100%; border: 0; background: transparent; font: inherit; color: var(--ink); outline: none; }
+.console-out { font-size: 12px; color: var(--muted); max-height: 84px; overflow: auto; }
+.console-hints { display: flex; gap: 8px; }
+.hint { font-size: 12px; background: var(--soft); padding: 1px 8px; border-radius: 999px; }
+.diff { display: flex; flex-direction: column; gap: 2px; }
+.diff-row { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.diff-row.unchanged { color: var(--muted); }
+.pre { white-space: pre-line; }
+.agent-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.team-row { padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.grow { flex: 1; }
+.small { font-size: 12px; }
+button.ghost.small { padding: 2px 8px; }

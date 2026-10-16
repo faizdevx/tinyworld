@@ -64,6 +64,8 @@ DEFAULT_ROLES = {
     "god.": "strong",
     "gm.conflict": "strong",
     "studio.lead": "strong",
+    "studio.escalate": "strong",
+    "studio.researcher": "cheap",
     "studio.": "standard",
     "agent.act": "standard",
     "agent.act.tier1": "cheap",

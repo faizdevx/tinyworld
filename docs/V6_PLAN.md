@@ -90,6 +90,24 @@ Honest state: all of this is verified with the scripted team and with
 scripted-model tests. **It has not been run with a real model.** The loop is
 provider-independent by design, but weak models will need prompt work.
 
+## Where v6 stands
+
+Everything below the line is tested with the scripted team and scripted-model
+clients. **None of it has run on a real model**, and that is still the one thing
+that decides whether v6 works. "Built" means the mechanism exists and is tested;
+it does not mean a model drives it well.
+
+| Step | Built, with tests | Not done |
+|---|---|---|
+| **v6.1** real teams | Model tier per role (lead strong, researchers cheap); a failed task is retried on the strongest tier with the reason added; cost per agent and per goal in the nameplate; a goal budget that pauses the team and asks (Add $1, Add $5, Stop) | A live run on a hosted and an open-weight model; native tool calling; constrained decoding; a `studio` step in the smoke harness |
+| **v6.2** worlds branch | The draft is compared with the live world in words ("3 people added, 1 place removed"); merge some sections and send the rest back with a note; a merge is refused if the live world changed meanwhile, and the team rebases first; a new goal on a built world changes it instead of rebuilding it | The draft as a real bible branch (it is a dictionary beside the world); two goals running against one world |
+| **v6.3** residents join | A Town tab lists the seeded world's people with where they are and what they last did; the console and API can ask the team for a change on a built world | Residents running tool sessions; the studio and the live map as one view |
+| **v6.4** the scene | A command console (`@name`, `/answer`, `/status`, `/pause`, `/resume`, `/stop`, `/spawn`, `/budget`, `/help`) with name completion; agent cards with pause, stop, message and cost; a title badge and desktop notification when a decision waits | Sprites, pathfinding between stations, day and night |
+| **v6.5** talking and steering | `send_message` between agents, delivered at the recipient's next step even mid-task; the same for your messages; editable shared notes; one agent can run on a different model from the rest | Mixed hosted and open-weight teams run live |
+| **v6.6** durability | A recorded build (model replies, searches, pages, your answers) replays with no model, no web and no user, and gives the same draft; a stopped build resumes without redoing finished tasks, and a running one restarts on server start | Postgres, a job queue, one worker per studio, fair sharing between studios |
+| **v6.7** policy | Fetching a page from a new site asks, with what "Always allow" covers spelled out, and two agents wanting the same site share one question; budgets for spend, calls, searches and pages; an audit log of what the team did outside the draft; tool output cannot close its own quote; a draft flagged for real, living people loses the plain Merge and needs an explicit, logged override | Policy for tools beyond fetch; injection tests against real models |
+| **v6.8** evaluation | `python -m tinyworld.eval.studio_bench`: first-pass rate, rework rate, blocked rate, interventions, cost, calls, blocking problems, time, per premise and averaged | Quality judged against a rubric; a nightly run; comparing models |
+
 ## v6.1: real teams on real models
 
 Goal: the studio works with a hosted model and with an open-weight model, and

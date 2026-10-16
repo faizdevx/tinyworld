@@ -24,9 +24,8 @@ _GOAL = re.compile(r"Goal: (.+)")
 
 
 def _step(tool: str, **args) -> LLMResult:
-    return LLMResult(
-        text=json.dumps({"thought": "", "tool": tool, "args": args}), model="script"
-    )
+    text = json.dumps({"thought": "", "tool": tool, "args": args})
+    return LLMResult(text=text, model="script", output_tokens=max(1, len(text) // 4))
 
 
 class ScriptedTeam:
@@ -34,7 +33,22 @@ class ScriptedTeam:
 
     constrained = False
 
-    def __init__(self, ask: bool = True, delay: float = 0.0) -> None:
+    def __init__(
+        self,
+        ask: bool = True,
+        delay: float = 0.0,
+        *,
+        fix: str | None = None,
+        bad_section: str | None = None,
+        talk: bool = False,
+    ) -> None:
+        # fix: the reviewer sends this section back once.
+        # bad_section: the first attempt at this section writes something invalid.
+        # talk: the lead messages a teammate once.
+        self.fix = fix
+        self.bad_section = bad_section
+        self.talk = talk
+        self._fixed = False
         self.ask = ask
         # A pause per step, so a person watching the studio can follow it.
         self.delay = delay
@@ -46,8 +60,10 @@ class ScriptedTeam:
             import asyncio
 
             await asyncio.sleep(self.delay)
-        if request.role in ("studio.agent", "studio.lead"):
-            return self._agent(request)
+        if request.role.startswith("studio."):
+            result = self._agent(request)
+            result.input_tokens = max(1, (len(request.system) + len(request.user)) // 4)
+            return result
         if request.role == "critic":
             return LLMResult(text='{"findings": []}', model="script")
         return LLMResult(text="{}", model="script")
@@ -61,6 +77,20 @@ class ScriptedTeam:
         _, world, _ = prepared.pick(goal)
 
         if kind == "plan":
+            if "Rebase onto" in user or "Apply the requested changes" in user:
+                return _step("finish", summary="looked it over; the draft stands")
+            live = "A world already exists" in user
+            if live:
+                if "plan_tasks" not in used:
+                    from tinyworld.studio.team import standard_plan
+
+                    return _step(
+                        "plan_tasks",
+                        tasks=standard_plan(["the change"], touch=["factions"]),
+                    )
+                return _step("finish", summary="planned the change")
+            if self.talk and "send_message" not in used:
+                return _step("send_message", to="iris", text="Look for how people pay, please.")
             if "define_premise" not in used and "write_section" not in used:
                 return _step("write_section", section="premise", content=world.PREMISE)
             if self.ask and "ask_user" not in used:
@@ -96,6 +126,13 @@ class ScriptedTeam:
             return _step("finish", summary="notes saved")
 
         if kind in ("section", "digest") and section:
+            if (
+                section == self.bad_section
+                and "previous attempt failed" not in user
+            ):
+                if "write_section" not in used:
+                    return _step("write_section", section=section, content={"nope": 1})
+                return _step("finish", summary="done (it was not)")
             if "write_section" not in used:
                 if section == "divergence":
                     content = world.DIVERGENCE
@@ -111,6 +148,9 @@ class ScriptedTeam:
                 return _step("check_draft")
             if "review_draft" not in used:
                 return _step("review_draft")
+            if self.fix and not self._fixed:
+                self._fixed = True
+                return _step("request_fix", section=self.fix, note="make it denser")
             return _step("finish", summary="the draft holds together")
 
         return _step("finish", summary="nothing to do")

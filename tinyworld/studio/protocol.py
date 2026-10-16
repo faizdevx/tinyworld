@@ -46,9 +46,13 @@ class Agent(Model):
     activity: str = ""
     task_id: str | None = None
     model: str = ""
-    # Steps taken and cost on the current task, for the nameplate.
+    # Steps taken on the current task, and what this agent has cost so far.
     steps: int = 0
+    cost: float = 0.0
+    calls: int = 0
     active: bool = True
+    # A paused agent finishes nothing new: it takes no further task.
+    paused: bool = False
 
 
 class Task(Model):
@@ -104,9 +108,24 @@ class FeedItem(Model):
 class Goal(Model):
     id: str
     text: str
-    status: Literal["planning", "running", "review", "merged", "rejected", "failed"] = "planning"
+    status: Literal[
+        "planning", "running", "review", "merged", "rejected", "failed", "paused"
+    ] = "planning"
     progress: float = 0.0
     world_id: str = ""
+    # Dollars. None means no cap. The team pauses and asks when it is reached.
+    budget: float | None = None
+    spent: float = 0.0
+
+
+class AuditEntry(Model):
+    """Something with an effect outside the draft: who did it, and what."""
+
+    id: str
+    actor: str
+    action: str
+    detail: str = ""
+    at: datetime | None = None
 
 
 def message(kind: str, **payload) -> dict:

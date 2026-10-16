@@ -31,8 +31,12 @@ nothing until you press **Merge**. Then the residents live in it.
 <img src="docs/images/v6-studio-question.jpg" width="49%" alt="The lead asks you a question at the podium">
 </p>
 <p>
-<img src="docs/images/v6-studio-merge.jpg" width="49%" alt="The draft is complete; Merge, Request changes or Reject">
-<img src="docs/images/v6-studio-merged.jpg" width="49%" alt="Merged: ready to seed the world">
+<img src="docs/images/v6-studio-merge.jpg" width="49%" alt="The merge card: what would change, a checkbox per section">
+<img src="docs/images/v6-studio-card.jpg" width="49%" alt="An agent's card: state, task, cost, pause, stop, message">
+</p>
+<p>
+<img src="docs/images/v6-studio-partial.jpg" width="49%" alt="Part merged, a section sent back to the team">
+<img src="docs/images/v6-studio-merged.jpg" width="49%" alt="Merged, with the audit log of what the team did">
 </p>
 
 - **A cast, each with a job.** Marlow leads and plans. Iris and Ash research.
@@ -48,7 +52,24 @@ nothing until you press **Merge**. Then the residents live in it.
   Request changes, with your note, puts the team back to work. Reject changes
   nothing.
 - **Closing the page loses nothing.** The foreman keeps the state; the page is
-  only a window.
+  only a window. A build that was running when the server stopped carries on.
+- **Merge part of it.** The merge card shows what would change in words ("9
+  people added"), with a checkbox per section. Merge what you like and send the
+  rest back with a note. If the live world changed while the team worked, the
+  merge is refused and the team rebases first.
+- **A console.** `@juno make the old city denser` reaches Juno at her next step,
+  even mid-task. `/status`, `/pause @x`, `/stop @x`, `/budget 5`, `/answer`.
+  Click an agent for its card: state, task, recent log, cost, pause, stop, message.
+- **Spend and permission under control.** Each agent shows what it has cost. A
+  goal can have a budget; at the limit the team stops and asks. Reading a page
+  from a new site asks first, and says what "Always allow" covers. Everything
+  the team does outside the draft is in an audit log.
+- **A draft that names real, living people** cannot be merged with one click: it
+  needs an explicit "Merge anyway", which is logged.
+- **Replay.** Model replies, searches, pages and your answers are recorded, so a
+  build replays with no model, no web and nobody to ask, and gives the same draft.
+- **Measure it.** `python -m tinyworld.eval.studio_bench` reports first-pass
+  rate, rework, blocked tasks, questions asked, cost and time per build.
 - **Works with no model.** Without a key a scripted team plays the same roles
   with the same protocol, so the whole studio runs and can be demoed.
 
@@ -56,11 +77,13 @@ nothing until you press **Merge**. Then the residents live in it.
 python -m tinyworld.api.app          # then "Build with the team" on the home page
 ```
 
-**Honest status.** The studio is built and tested with the scripted team and
-with scripted-model tests, and checked in a browser. **It has not been run with a
-real model yet**, so how well hosted or open-weight models drive the tool loop
-is unmeasured. The plan, with what each step must prove, is in
-[docs/V6_PLAN.md](docs/V6_PLAN.md). The design follows
+**Honest status.** The studio, its console, budgets, permissions, diff and partial
+merge, replay and benchmark are built and tested with the scripted team and
+scripted-model clients, and checked in a browser. **None of it has been run with a
+real model yet**, so how well hosted or open-weight models drive the tool loop is
+unmeasured. Still missing: sprites and pathfinding in the scene, residents that run
+tool sessions, Postgres and workers. What is built and what is not, step by step,
+is in [docs/V6_PLAN.md](docs/V6_PLAN.md#where-v6-stands). The design follows
 [AgentCraft](https://github.com/blendi-remade/agentcraft): a foreman that owns
 the truth, a view that holds none, agents that use tools, a decision queue, and
 a human merge gate. It differs in building worlds that then run, in recording
@@ -477,11 +500,12 @@ tinyworld/
   gm/        verbs, rules, adjudicator, conflicts, perception, master
   agents/    persona, memory, retrieval, beliefs, reflection, planner, routine, agent
   world/     knowledge graph, projects
-  studio/    protocol, task graph, state, agent session, foreman (team), scripted team
+  studio/    protocol, task graph, state, agent session, foreman (team), policy, diffing,
+             console, replay, scripted team
   genesis/   bible, research (agent), web, critic, seeding, pipeline
   god/       parser, feasibility, compiler, channel
   sim/       loop, scene, commitments, tiers, scheduler, budget, chronicler, timeskip, replay
-  eval/      invariants, anachronism, judge, divergence, metrics, report, scenario, distill
+  eval/      invariants, anachronism, judge, divergence, metrics, report, scenario, distill, studio_bench
   fixtures/  prepared worlds: berlin, lucknow, toy
   api/       app, hub, runner, studio_routes, views, static/app
 ```
@@ -492,7 +516,7 @@ tinyworld/
 python -m pytest -q
 ```
 
-406 tests. Set `TINYWORLD_DEBUG=1` to check every committed event against the
+430 tests. Set `TINYWORLD_DEBUG=1` to check every committed event against the
 invariants as the tests run; CI does this.
 
 ## Results so far
