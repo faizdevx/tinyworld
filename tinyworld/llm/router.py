@@ -68,6 +68,7 @@ DEFAULT_ROLES = {
     "studio.researcher": "cheap",
     "studio.": "standard",
     "agent.act": "standard",
+    "agent.mind": "standard",
     "agent.act.tier1": "cheap",
     "agent.scene": "standard",
     "agent.reflect": "standard",

@@ -100,13 +100,32 @@ it does not mean a model drives it well.
 | Step | Built, with tests | Not done |
 |---|---|---|
 | **v6.1** real teams | Model tier per role (lead strong, researchers cheap); a failed task is retried on the strongest tier with the reason added; cost per agent and per goal in the nameplate; a goal budget that pauses the team and asks (Add $1, Add $5, Stop) | A live run on a hosted and an open-weight model; native tool calling; constrained decoding; a `studio` step in the smoke harness |
-| **v6.2** worlds branch | The draft is compared with the live world in words ("3 people added, 1 place removed"); merge some sections and send the rest back with a note; a merge is refused if the live world changed meanwhile, and the team rebases first; a new goal on a built world changes it instead of rebuilding it | The draft as a real bible branch (it is a dictionary beside the world); two goals running against one world |
-| **v6.3** residents join | A Town tab lists the seeded world's people with where they are and what they last did; the console and API can ask the team for a change on a built world | Residents running tool sessions; the studio and the live map as one view |
-| **v6.4** the scene | A command console (`@name`, `/answer`, `/status`, `/pause`, `/resume`, `/stop`, `/spawn`, `/budget`, `/help`) with name completion; agent cards with pause, stop, message and cost; a title badge and desktop notification when a decision waits | Sprites, pathfinding between stations, day and night |
+| **v6.2** worlds branch | The draft is a real bible version (negative, never live) and is tried before the merge: it is seeded in a scratch store and run with rule-driven residents, and the result (steps, events, who acted, invariant problems) is in the merge card; the draft is compared with the live world in words ("3 people added, 1 place removed"); merge some sections and send the rest back with a note; a merge is refused if the live world changed meanwhile, and the team rebases first; a new goal on a built world changes it instead of rebuilding it | Two goals running against one world |
+| **v6.3** residents join | Residents who deliberate run a short tool session (look around, recall, check promises and undertakings, then decide), checked by the same rules and replayable; a Town tab lists the seeded world's people; the console and API can ask the team for a change on a built world | The studio and the live map as one view |
+| **v6.4** the scene | A tiled studio with rooms, walls and doorways; pixel characters with their own hair, skin and colour, two walking frames, walking A* paths between stations; furniture that shows state (a card per task on the wall, a paper per section on the drafting table, a lit podium when you are needed); speech bubbles; day and night from your clock; a command console (`@name`, `/answer`, `/status`, `/pause`, `/resume`, `/stop`, `/spawn`, `/budget`, `/help`) with name completion; agent cards with pause, stop, message and cost; a title badge and desktop notification when a decision waits | Hand-drawn art; sound |
 | **v6.5** talking and steering | `send_message` between agents, delivered at the recipient's next step even mid-task; the same for your messages; editable shared notes; one agent can run on a different model from the rest | Mixed hosted and open-weight teams run live |
 | **v6.6** durability | A recorded build (model replies, searches, pages, your answers) replays with no model, no web and no user, and gives the same draft; a stopped build resumes without redoing finished tasks, and a running one restarts on server start | Postgres, a job queue, one worker per studio, fair sharing between studios |
 | **v6.7** policy | Fetching a page from a new site asks, with what "Always allow" covers spelled out, and two agents wanting the same site share one question; budgets for spend, calls, searches and pages; an audit log of what the team did outside the draft; tool output cannot close its own quote; a draft flagged for real, living people loses the plain Merge and needs an explicit, logged override | Policy for tools beyond fetch; injection tests against real models |
 | **v6.8** evaluation | `python -m tinyworld.eval.studio_bench`: first-pass rate, rework rate, blocked rate, interventions, cost, calls, blocking problems, time, per premise and averaged | Quality judged against a rubric; a nightly run; comparing models |
+
+## The first live runs
+
+The studio has now run on a real model: **NVIDIA Nemotron 3 Super 120B**
+(open weights), served by OpenRouter's free tier and reached through the
+open-weight client (`--provider local` pointed at an OpenAI-compatible
+endpoint), with live web search. Two short probes on the Lucknow premise, one
+research task and one section each:
+
+| Probe | What happened | What it exposed | Fixed by |
+|---|---|---|---|
+| 1 | The researcher searched 15 times, never saved a note, hit the 8-step cap three times, and blocked the build. It asked permission once per new site (4 questions). | No clear end to a research job; a capped session threw its work away; a failed research task held everything up; per-site questions were too many for a person | A step-by-step procedure per job with an explicit end; the step budget shown in every prompt; a capped task that saved its work counts as done; research that never succeeds lets the writers carry on; near-duplicate searches refused; a retry is told what was already tried; one web question per build |
+| 2 | Research saved a note and finished; one web question. Then **geography** failed three times: the section JSON was cut off mid-object (`Expecting ',' delimiter`) | One reply could not hold a whole section at 1,500 tokens, and an unreadable reply ended the whole task | Up to 7,000 tokens for a section reply; an unreadable reply costs a step, not the task, with "make it shorter"; writers told to keep lists to eight items |
+
+The account's 50 free requests for the day ran out during probe 2, so the fixes
+from probe 2 have not been tried live yet. The ideas behind several fixes come
+from AgentCraft's prompts: a numbered procedure for each job, "when done, end
+your turn", answered questions kept with the task so a retry does not ask again,
+and a hand-over that continues from saved work instead of starting over.
 
 ## v6.1: real teams on real models
 

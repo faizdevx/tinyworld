@@ -56,6 +56,13 @@ def allowed(domain: str, allowed_domains: list[str]) -> bool:
     return domain in DEFAULT_ALLOWED or domain in allowed_domains
 
 
+WEB_OPTIONS = ["Allow for this build", "Ask for each site", "No web pages"]
+WEB_QUESTION = (
+    "May the team read web pages for this build? They only read public pages "
+    "(nothing is sent, nothing is signed in to). Wikipedia is always allowed."
+)
+
+
 def permission_text(domain: str) -> str:
     """What the user is being asked, including the reach of 'Always allow'."""
     return (

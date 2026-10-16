@@ -78,6 +78,38 @@ async def build_once(premise: str, make_llm_and_search) -> dict:
     return measure(studio, time.monotonic() - started)
 
 
+async def probe(premise: str, make_llm_and_search, sections=("geography",)) -> dict:
+    """A small live check: one research task and a few sections, not a whole build.
+
+    Cheap enough to run on a rate-limited free model, and it exercises the parts
+    that matter: the tool loop, the web, notes, and writing a section that must
+    pass the real schema.
+    """
+    store = Store()
+    world = store.create_world(premise, datetime(2000, 1, 1, 8))
+    studio = Studio(store, world)
+    llm, search = make_llm_and_search(store, premise)
+    foreman = Foreman(studio, llm, search, auto_answer=True, step_cap=8)
+    studio.set_goal(premise)
+    research = studio.graph.create(f"Research: {premise[:60]}", kind="research")
+    for section in sections:
+        studio.graph.create(f"Write {section}", kind="section", section=section, deps=[research.id])
+    started = time.monotonic()
+    foreman.start()
+    await foreman._runner
+    out = measure(studio, time.monotonic() - started)
+    out["tasks_detail"] = [
+        {"title": t.title, "status": t.status, "attempts": t.attempts,
+         "reason": t.blocked_reason[:200], "summary": t.summary[:120]}
+        for t in studio.graph.all()
+    ]
+    out["notes"] = [m.title for m in studio.data.memory]
+    out["draft"] = {k: (len(v.get("places", [])) if k == "geography" else list(v)[:6])
+                    for k, v in studio.data.draft.items()}
+    out["feed_tail"] = [f.text[:140] for f in studio.data.feed[-25:]]
+    return out
+
+
 def scripted(store, premise):
     config = LLMConfig()
     return StructuredLLM(ScriptedTeam(), config, Tracer(store, config)), scripted_search(premise)
@@ -102,6 +134,9 @@ async def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Benchmark the studio on a set of premises")
     parser.add_argument("--premise", action="append", help="repeat for several")
     parser.add_argument("--provider", choices=["anthropic", "openrouter", "gemini", "local"])
+    parser.add_argument("--probe", action="store_true",
+                        help="one research task and one section instead of a whole build")
+    parser.add_argument("--sections", nargs="*", default=["geography"])
     options = parser.parse_args(argv)
     premises = options.premise or PREMISES
 
@@ -123,6 +158,11 @@ async def main(argv: list[str] | None = None) -> int:
 
     rows = []
     for premise in premises:
+        if options.probe:
+            row = await probe(premise, make, tuple(options.sections))
+            print(json.dumps(row, indent=1))
+            rows.append(row)
+            continue
         row = await build_once(premise, make)
         rows.append(row)
         print(json.dumps(row))

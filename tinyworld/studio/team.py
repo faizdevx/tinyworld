@@ -67,6 +67,49 @@ TOOL_STATE: dict[str, tuple[AgentState, Station]] = {
 }
 WRITABLE = ["premise", "divergence", *SECTIONS, "digest"]
 MAX_ATTEMPTS = 3
+
+# How each kind of job is done, step by step. A clear end matters most: a model
+# that does not know when it is finished keeps searching until it runs out.
+PROCEDURE = {
+    "research": (
+        "How to do it:\n"
+        "1. web_search at most three times, each a different question.\n"
+        "2. fetch_page the one or two most useful results (snippets count too).\n"
+        "3. write_memory three to six notes: one concrete fact each, with where it came from.\n"
+        "4. finish. Do not keep searching once you have notes worth keeping."
+    ),
+    "section": (
+        "How to do it:\n"
+        "1. read_memory for the team's notes, and read_draft for sections this one depends on.\n"
+        "2. write_section with the whole section as one JSON object. Keep it compact: "
+        "short descriptions, and no more than eight items in any list.\n"
+        "3. If it is not saved, fix exactly what the reply says and write it again.\n"
+        "4. finish as soon as it is saved."
+    ),
+    "digest": (
+        "How to do it:\n"
+        "1. read_draft the sections.\n"
+        "2. write_section digest: an overview paragraph and a few topics.\n"
+        "3. finish."
+    ),
+    "review": (
+        "How to do it:\n"
+        "1. check_draft, then review_draft.\n"
+        "2. request_fix only for problems that would stop the world being simulated.\n"
+        "3. finish with a one-line verdict."
+    ),
+    "plan": (
+        "How to do it:\n"
+        "1. write_section premise (when there is none yet).\n"
+        "2. plan_tasks: the research and the sections, with dependencies.\n"
+        "3. ask_user only for a choice that is genuinely the user's.\n"
+        "4. finish."
+    ),
+}
+# Room for one reply. A section goes out whole inside the reply, so it needs room.
+STEP_TOKENS = {"section": 7000, "digest": 3000, "plan": 5000, "review": 2000, "research": 1500}
+# Two searches are "the same" when most of their words are.
+NEAR_DUPLICATE = 0.6
 MAX_FIX_ROUNDS = 2
 BUDGET_STEPS = ["Add $1", "Add $5", "Stop"]
 
@@ -127,6 +170,7 @@ class Foreman:
         llm_for: dict[str, StructuredLLM] | None = None,
         answers: dict[str, str] | None = None,
         limits: policy.Limits | None = None,
+        trial_ticks: int = 12,
         now=datetime.now,
     ) -> None:
         self.studio = studio
@@ -141,6 +185,7 @@ class Foreman:
         # Answers fixed in advance, by question text. A replay uses them.
         self.answers = answers or {}
         self.limits = limits or policy.Limits()
+        self.trial_ticks = trial_ticks
         self._now = now
         self._active: dict[str, asyncio.Task] = {}
         self._hits: dict[str, SearchHit] = {}
@@ -150,6 +195,8 @@ class Foreman:
         self._budget_asked = False
         # A question about a site that is already out, by domain.
         self._asking: dict[str, asyncio.Future] = {}
+        # Searches made per task, so a retry is told what was already tried.
+        self._queries: dict[str, list[str]] = {}
         self.store = studio.store
         self.world_id = studio.world_id
         self._ensure_cast()
@@ -205,7 +252,18 @@ class Foreman:
         studio.data.base_hash = self._hash(live)
         studio.data.base_live = live
         studio.data.draft = {k: dict(v) for k, v in live.items()} if live else {}
+        # A fresh draft version for this goal, starting from the live world.
+        studio.data.draft_version = -(studio.data.counters.get("g", 1))
+        studio.data.trial = {}
+        bibles = BibleStore(self.store)
+        for section, content in studio.data.draft.items():
+            if section in ARTIFACTS:
+                bibles.put_at(
+                    self.world_id, studio.data.draft_version, section,
+                    ARTIFACTS[section].model_validate(content),
+                )
         studio.data.fetches = studio.data.searches = 0
+        studio.data.web_mode = "ask"
         self._fix_rounds = 0
         self._budget_asked = False
         brief = f"The premise to build a world from:\n{goal_text}"
@@ -434,6 +492,7 @@ class Foreman:
             llm_role=self._llm_role(agent, task),
             inbox=lambda: studio.take_messages(agent_id),
             call_id=f"{agent_id}:{task_id}",
+            max_tokens=STEP_TOKENS.get(task.kind, 1500),
         )
         try:
             result = await session.run(self._task_text(task), self._world_note())
@@ -448,7 +507,14 @@ class Foreman:
         studio = self.studio
         graph = studio.graph
         task = graph.get(task_id)
-        ok = result.status == "finished" and self._produced(task)
+        produced = self._produced(task, agent_id)
+        # Running out of steps after saving the work still counts: the work is there.
+        salvaged = result.status == "capped" and produced and task.kind in (
+            "research", "section", "digest",
+        )
+        ok = (result.status == "finished" and produced) or salvaged
+        if salvaged:
+            result.summary = f"ran out of steps, but the work was saved ({task.kind})"
         if ok:
             if task.kind == "plan" and len(graph.all()) == 1:
                 # The lead made no plan of its own: use the usual shape. On an
@@ -472,6 +538,14 @@ class Foreman:
                 graph.move(task_id, "todo", attempts=attempts, assignee=None,
                            blocked_reason=reason)
                 studio.say(f"will try {task.title!r} again: {reason}", agent_id, "task")
+            elif task.kind == "research":
+                # Writers can work from what they know. Say so, and let them.
+                graph.move(task_id, "done", attempts=attempts, blocked_reason=reason,
+                           summary=f"research incomplete: {reason}")
+                studio.say(
+                    f"gave up on {task.title!r} ({reason}); the writers carry on without it",
+                    agent_id, "task",
+                )
             else:
                 graph.move(task_id, "blocked", attempts=attempts, blocked_reason=reason)
                 studio.say(f"stuck on {task.title!r}: {reason}", agent_id, "task")
@@ -479,10 +553,17 @@ class Foreman:
                       "lounge", reason[:80])
         studio.task_changed(task_id)
 
-    def _produced(self, task: Task) -> bool:
+    def _produced(self, task: Task, agent_id: str | None = None) -> bool:
         """Did a task that should leave something behind actually leave it?"""
         if task.kind in ("section", "digest") and task.section:
             return task.section in self.studio.data.draft
+        if task.kind == "research":
+            author = agent_id or task.assignee
+            return any(
+                m.author == author and task.created_at is not None
+                and (m.updated_at is None or m.updated_at >= task.created_at)
+                for m in self.studio.data.memory
+            )
         if task.kind == "plan":
             return "premise" in self.studio.data.draft or len(self.studio.graph.all()) > 1
         return True
@@ -506,8 +587,29 @@ class Foreman:
             extra = "\nWhat this section is: " + SECTION_BRIEFS[task.section]
         if task.kind == "research":
             extra = "\nFind facts about everyday life, institutions, economy and technology."
+        procedure = PROCEDURE.get(task.kind)
+        if procedure:
+            extra += "\n\n" + procedure
         if task.attempts and task.blocked_reason:
-            extra += f"\nA previous attempt failed: {task.blocked_reason}. Do it differently."
+            # A retry continues from what was saved; it does not start over.
+            saved = [
+                m.title for m in self.studio.data.memory if m.author == (task.assignee or "")
+            ][-6:]
+            tried = self._queries.get(task.id, [])[-6:]
+            extra += f"\n\nA previous attempt stopped: {task.blocked_reason}."
+            if saved:
+                extra += " Notes already saved: " + "; ".join(saved) + "."
+            if tried:
+                extra += " Searches already made: " + "; ".join(tried) + "."
+            extra += " Continue from there; do not repeat it."
+        asked = [
+            d for d in self.studio.data.decisions
+            if d.task_id == task.id and d.kind == "question" and d.status == "answered"
+        ]
+        if asked:
+            extra += "\n\nThe user already answered (do not ask again):\n" + "\n".join(
+                f"- {d.question} -> {d.answer}" for d in asked
+            )
         return f"{head}\nGoal: {goal}\n{body}{extra}".strip()
 
     def _world_note(self) -> str:
@@ -562,6 +664,15 @@ class Foreman:
                 return "give a query"
             if studio.data.searches >= self.limits.max_searches:
                 return "the search budget for this goal is used up"
+            words = set(query.lower().split())
+            for earlier in self._queries.get(task.id, []):
+                seen = set(earlier.lower().split())
+                if words and seen and len(words & seen) / len(words | seen) >= NEAR_DUPLICATE:
+                    return (
+                        f"You already searched for nearly this ({earlier!r}). Read a result "
+                        "with fetch_page, save what you know with write_memory, or finish."
+                    )
+            self._queries.setdefault(task.id, []).append(query)
             studio.data.searches += 1
             studio.log(agent_id, "search", query)
             hits = await self.search.search(query, 4)
@@ -580,7 +691,37 @@ class Foreman:
             if hit is None:
                 return f"unknown result {ref!r}; use an id from web_search"
             domain = policy.domain_of(hit.url)
-            if not policy.allowed(domain, studio.data.allowed_domains):
+            if not policy.allowed(domain, studio.data.allowed_domains) and studio.data.web_mode == "ask":
+                # One question for the whole build, not one per site.
+                future = self._asking.get("*")
+                first = future is None
+                if first:
+                    decision = Decision(
+                        id="", agent_id=agent_id, kind="permission",
+                        question=policy.WEB_QUESTION, options=list(policy.WEB_OPTIONS),
+                        context=f"First page asked for: {hit.url}", task_id=task.id,
+                    )
+                    future = studio.ask(decision)
+                    self._asking["*"] = future
+                    self._preset(decision)
+                self._set(agent_id, "waiting_user", "podium", "may we read the web?", task.id)
+                answered = await future
+                if first:
+                    self._asking.pop("*", None)
+                    studio.data.web_mode = {
+                        "Allow for this build": "all", "Ask for each site": "per_site",
+                    }.get(answered.answer, "none")
+                    studio.log("you", "permission", f"web: {answered.answer}")
+                    studio.save()
+            if studio.data.web_mode == "none" and not policy.allowed(domain, studio.data.allowed_domains):
+                return (
+                    "The user chose no web pages for this build. Use the search snippets "
+                    "and what you know, save notes, and finish."
+                )
+            if (
+                studio.data.web_mode == "per_site"
+                and not policy.allowed(domain, studio.data.allowed_domains)
+            ):
                 # Two agents wanting the same site share one question.
                 future = self._asking.get(domain)
                 first = future is None
@@ -659,6 +800,10 @@ class Foreman:
                 )
                 return f"{section} was not saved. Fix: {problems}"
             studio.data.draft[section] = valid.model_dump(mode="json")
+            if studio.data.draft_version:
+                BibleStore(self.store).put_at(
+                    self.world_id, studio.data.draft_version, section, valid
+                )
             studio.emit("draft.upsert", section=section)
             studio.save()
             return f"{section} saved to the draft"
@@ -836,6 +981,15 @@ class Foreman:
         studio.update_goal(status="review")
         bible = self._draft_bible()
         findings = critic.check(bible)
+        # Try the world before asking to merge it, as a CI run is shown with a review.
+        from tinyworld.studio.trial import trial as try_world
+
+        studio.say("Trying the draft world before the merge…", "vera", "system")
+        report = await try_world(bible, ticks=self.trial_ticks, goal=studio.data.goal.text)
+        studio.data.trial = report.to_dict()
+        studio.save()
+        studio.emit("trial", report=report.to_dict())
+        studio.say(report.line(), "vera", "system")
         blocking = [f for f in findings if f.blocking]
         diffs = diffing.diff(self._live(), studio.data.draft)
         real = self._real_person_findings()
@@ -843,6 +997,7 @@ class Foreman:
             f"Draft world: {len(bible.geography.places)} places, "
             f"{len(bible.figures.figures)} people, {len(bible.factions.factions)} factions. "
             + (f"{len(blocking)} blocking problem(s) remain." if blocking else "No blocking problems.")
+            + "\n" + report.line()
             + "\n" + diffing.summary(diffs)
         )
         options = list(MERGE_OPTIONS)

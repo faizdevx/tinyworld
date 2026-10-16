@@ -75,10 +75,12 @@ def test_a_page_from_a_new_site_asks_first_and_always_allow_covers_that_site_onl
     async def drive():
         foreman.submit(GOAL)
         end = time.time() + 10
-        while time.time() < end and not studio.graph.finished():
+        while time.time() < end and studio.data.goal.status not in ("merged", "rejected", "failed", "paused"):
             await asyncio.sleep(0.005)
             for d in studio.open_decisions():
-                if d.kind == "permission":
+                if d.kind == "permission" and "for this build" in d.question:
+                    studio.answer(d.id, "Ask for each site")
+                elif d.kind == "permission":
                     asked.append(d.question)
                     studio.answer(d.id, "Always allow")
                 elif d.kind == "question":
@@ -103,16 +105,63 @@ def test_denying_a_site_tells_the_agent_and_nothing_is_fetched():
     async def drive():
         foreman.submit(GOAL)
         end = time.time() + 10
-        while time.time() < end and not studio.graph.finished():
+        while time.time() < end and studio.data.goal.status not in ("merged", "rejected", "failed", "paused"):
             await asyncio.sleep(0.005)
             for d in studio.open_decisions():
-                studio.answer(d.id, "Deny" if d.kind == "permission" else (d.options[0] if d.options else ""))
+                if d.kind == "permission" and "for this build" in d.question:
+                    studio.answer(d.id, "Ask for each site")
+                elif d.kind == "permission":
+                    studio.answer(d.id, "Deny")
+                else:
+                    studio.answer(d.id, d.options[0] if d.options else "")
         await foreman.wait()
 
     run(drive())
     assert studio.data.allowed_domains == []
     assert not [a for a in studio.data.audit if a.action == "fetch"]
     # The research still finished: a denial is information, not a failure.
+    assert all(t.status == "done" for t in studio.graph.all() if t.kind == "research")
+
+
+def web_answers(world_answer):
+    pages = {
+        "https://news.example.org/a": ("Setting overview", "text a"),
+        "https://other.net/c": ("Setting elsewhere", "text c"),
+    }
+    store, world, studio, foreman = web_world(pages)
+    asked = []
+
+    async def drive():
+        foreman.submit(GOAL)
+        end = time.time() + 10
+        while time.time() < end and studio.data.goal.status not in ("merged", "rejected", "failed", "paused"):
+            await asyncio.sleep(0.005)
+            for d in studio.open_decisions():
+                if d.kind == "permission":
+                    asked.append(d.question)
+                    studio.answer(d.id, world_answer)
+                elif d.kind == "question":
+                    studio.answer(d.id, d.options[0])
+                elif d.kind == "merge":
+                    studio.answer(d.id, "Reject")
+        await foreman.wait()
+
+    run(drive())
+    return studio, asked
+
+
+def test_allowing_the_web_for_a_build_is_one_question_for_every_site():
+    studio, asked = web_answers("Allow for this build")
+    assert len(asked) == 1 and "for this build" in asked[0]
+    assert studio.data.web_mode == "all"
+    fetched = {a.detail for a in studio.data.audit if a.action == "fetch"}
+    assert any("example.org" in u for u in fetched) or any("other.net" in u for u in fetched)
+
+
+def test_no_web_pages_means_nothing_is_fetched_from_outside():
+    studio, asked = web_answers("No web pages")
+    assert len(asked) == 1 and studio.data.web_mode == "none"
+    assert not [a for a in studio.data.audit if a.action == "fetch"]
     assert all(t.status == "done" for t in studio.graph.all() if t.kind == "research")
 
 
@@ -678,3 +727,191 @@ def test_the_api_covers_console_messages_notes_budget_audit_agents_and_town(monk
 
         again = client.post(f"/api/studio/{world}/goal", json={"goal": "Add a rival faction"})
         assert again.status_code == 200
+
+
+# -- what the first live runs found ------------------------------------------
+
+
+def test_a_cut_off_reply_costs_a_step_not_the_task():
+    """A free open-weight model cut off its section JSON at the length limit."""
+    from test_studio import Scripted, session_for
+    from tinyworld.studio.session import Tool as T
+
+    steps = [
+        '{"tool": "write_section", "args": {"section": "geography", "content": {"places": [',
+        {"tool": "echo", "args": {"x": 1}},
+        {"tool": "finish", "args": {"summary": "done"}},
+    ]
+
+    class Mixed(Scripted):
+        async def complete(self, request, model, effort):
+            self.requests.append(request)
+            step = self.steps.pop(0) if len(self.steps) > 1 else self.steps[0]
+            text = step if isinstance(step, str) else json.dumps(step)
+            return LLMResult(text=text, model="m")
+
+    async def echo(args):
+        return "ok"
+
+    client = Mixed(steps)
+    result = run(session_for(client, [T("echo", "echo(x)", echo)]).run("task"))
+    assert result.status == "finished"
+    assert "could not be read" in client.requests[1].user and "shorter" in client.requests[1].user
+
+
+def test_endless_unreadable_replies_still_end():
+    from test_studio import Scripted, session_for
+
+    class Garbage(Scripted):
+        async def complete(self, request, model, effort):
+            self.requests.append(request)
+            return LLMResult(text="not json at all", model="m")
+
+    result = run(session_for(Garbage([{}]), []).run("task"))
+    assert result.status == "failed" and result.steps == 4
+
+
+def test_the_prompt_says_how_many_steps_are_left_and_when_to_save():
+    from test_studio import Scripted, session_for
+    from tinyworld.studio.session import Tool as T
+
+    async def echo(args):
+        return "ok"
+
+    client = Scripted([{"tool": "echo", "args": {"x": 1}}, {"tool": "echo", "args": {"x": 2}},
+                       {"tool": "echo", "args": {"x": 3}}, {"tool": "finish", "args": {"summary": "s"}}])
+    run(session_for(client, [T("echo", "echo(x)", echo)], max_steps=4).run("task"))
+    prompts = [r.user for r in client.requests]
+    assert "Step 1 of 4." in prompts[0]
+    assert "two steps left" in prompts[2]
+    assert "This is your last step" in prompts[3]
+
+
+def test_research_that_saved_notes_before_running_out_counts_as_done():
+    class NotesThenRambles(ScriptedTeam):
+        async def complete(self, request, model, effort):
+            if request.role.startswith("studio.") and "KIND: research" in request.user:
+                used = request.user.count("you used ")
+                if used == 0:
+                    text = json.dumps({"tool": "write_memory", "args": {"title": "A fact", "body": "Chowk is old (wikipedia)"}})
+                else:
+                    text = json.dumps({"tool": "web_search", "args": {"query": f"more {used} things"}})
+                return LLMResult(text=text, model="script")
+            return await super().complete(request, model, effort)
+
+    store, world, studio, foreman = build(client=NotesThenRambles(ask=False), step_cap=4)
+
+    async def drive():
+        foreman.submit(GOAL)
+        await foreman.wait()
+
+    run(drive())
+    research = [t for t in studio.graph.all() if t.kind == "research"]
+    assert all(t.status == "done" for t in research)
+    assert any("work was saved" in t.summary for t in research)
+    assert studio.data.goal.status == "merged"
+
+
+def test_research_that_never_works_does_not_block_the_writers():
+    class NeverNotes(ScriptedTeam):
+        async def complete(self, request, model, effort):
+            if request.role.startswith("studio.") and "KIND: research" in request.user:
+                n = request.user.count("you used ")
+                return LLMResult(text=json.dumps({"tool": "web_search", "args": {"query": f"q{n} {n} {n}x"}}), model="script")
+            return await super().complete(request, model, effort)
+
+    store, world, studio, foreman = build(client=NeverNotes(ask=False), step_cap=3)
+
+    async def drive():
+        foreman.submit(GOAL)
+        await foreman.wait()
+
+    run(drive())
+    research = [t for t in studio.graph.all() if t.kind == "research"]
+    assert all(t.status == "done" and t.summary.startswith("research incomplete") for t in research)
+    assert studio.data.goal.status == "merged"
+
+
+def test_a_near_duplicate_search_is_refused_and_a_retry_is_told_what_was_tried():
+    store, world, studio, foreman = build(client=ScriptedTeam(ask=False))
+    task = studio.graph.create("Research: x", kind="research")
+    tools = {t.name: t for t in foreman._tools(task, studio.agent("iris"))}
+    assert "no results" not in run(tools["web_search"].run({"query": "Lucknow internet penetration 2015"}))
+    again = run(tools["web_search"].run({"query": "lucknow internet penetration 2015 users"}))
+    assert "already searched for nearly this" in again
+    studio.graph.move(task.id, "doing", assignee="iris")
+    studio.graph.move(task.id, "todo", attempts=1, blocked_reason="capped after 8 steps", assignee=None)
+    task = studio.graph.get(task.id)
+    task.assignee = "iris"
+    text = foreman._task_text(task)
+    assert "Searches already made: Lucknow internet penetration 2015" in text
+    assert "do not repeat it" in text and "How to do it" in text
+
+
+def test_a_question_already_answered_is_not_asked_again_on_retry():
+    store, world, studio, foreman = build()
+    task = studio.graph.create("Write figures", kind="section", section="figures")
+
+    async def ask():
+        studio.ask(Decision(id="", agent_id="wren", question="Use real names?", options=["No"], task_id=task.id))
+        studio.answer(studio.data.decisions[-1].id, "No")
+
+    from tinyworld.studio.protocol import Decision
+
+    run(ask())
+    assert "Use real names? -> No" in foreman._task_text(task)
+
+
+# -- the draft is a bible version, and it is tried before the merge -----------
+
+
+def test_the_draft_is_a_real_bible_version_that_the_world_does_not_point_at():
+    store, world, studio, foreman = build(client=ScriptedTeam(ask=False), auto=False)
+    bibles = BibleStore(store)
+
+    async def drive():
+        foreman.submit(GOAL)
+        await until(lambda: merge_decision(studio) is not None, seconds=20)
+        version = studio.data.draft_version
+        assert version < 0
+        draft = bibles.load(world, version=version)
+        assert len(draft.figures.figures) >= 8 and draft.geography.places
+        # The live world is still empty.
+        assert bibles.get(world, "geography") is None
+        studio.answer(merge_decision(studio).id, "Merge")
+        await foreman.wait()
+
+    run(drive())
+    assert bibles.load(world).figures.figures
+
+
+def test_the_draft_is_tried_before_the_merge_and_the_result_is_in_the_card():
+    store, world, studio, foreman = build(client=ScriptedTeam(ask=False), auto=False)
+
+    async def drive():
+        foreman.submit(GOAL)
+        await until(lambda: merge_decision(studio) is not None, seconds=20)
+        decision = merge_decision(studio)
+        assert "Trial run:" in decision.context
+        assert studio.data.trial["ok"] is True
+        assert studio.data.trial["events"] > 20
+        assert studio.data.trial["acted"] >= 1
+        studio.answer(decision.id, "Reject")
+        await foreman.wait()
+
+    run(drive())
+    # The trial never touched this store: no branch was made for the world.
+    assert store.query("SELECT COUNT(*) n FROM branches WHERE world_id=?", (world,))[0]["n"] == 0
+
+
+def test_a_draft_that_cannot_run_fails_its_trial():
+    from tinyworld.genesis.bible import Bible
+    from tinyworld.studio.trial import trial
+
+    empty = run(trial(Bible()))
+    assert not empty.ok and "no places" in empty.problems[0]
+    store, world, studio, foreman = merged_world()
+    bible = BibleStore(store).load(world)
+    good = run(trial(bible, ticks=4))
+    assert good.ok and good.ticks == 4 and good.people >= 8
+    assert "Trial run: 4 steps" in good.line()

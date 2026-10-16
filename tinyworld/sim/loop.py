@@ -113,6 +113,7 @@ class Simulation:
         budget: Budget | None = None,
         routines: bool = True,
         scenes: bool = True,
+        resident_tools: bool = False,
         salience: float = 0.5,
         deliberate_hours: float = 12.0,
         max_jump_minutes: int = 480,
@@ -153,6 +154,12 @@ class Simulation:
                 role="agent.act.tier1", memories_k=3, new_limit=5, beliefs_limit=4,
             )
         self.scenes = Scenes(self) if (scenes and llm is not None) else None
+        # Residents who deliberate run a short tool session instead of one call.
+        self.mind = None
+        if resident_tools and self.agent is not None:
+            from tinyworld.agents.toolmind import ToolMind
+
+            self.mind = ToolMind(self.agent)
         self._last_events: list[Event] | None = None
         self._last_step: int | None = None
 
@@ -718,7 +725,8 @@ class Simulation:
                 mode = "react"
             if agent is not None:
                 result.modes[entity.id] = mode
-                deciders.append((entity, agent, daily.hint(state, entity, block)))
+                thinker = self.mind if (self.mind is not None and tier == 0 and mode == "deliberate") else agent
+                deciders.append((entity, thinker, daily.hint(state, entity, block)))
         modelled: list[Acted] = await asyncio.gather(
             *(
                 agent.act(

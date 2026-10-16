@@ -128,7 +128,7 @@ class ScriptedTeam:
         if kind in ("section", "digest") and section:
             if (
                 section == self.bad_section
-                and "previous attempt failed" not in user
+                and "previous attempt stopped" not in user
             ):
                 if "write_section" not in used:
                     return _step("write_section", section=section, content={"nope": 1})

@@ -317,6 +317,19 @@ class BibleStore:
             (world_id, self.version(world_id), section, content.model_dump_json()),
         )
 
+    def put_at(self, world_id: str, version: int, section: str, content: BaseModel) -> None:
+        """Write a section at a given version, which need not be the live one.
+
+        Drafts live at negative versions: rows like any other bible, never pointed
+        at by the world until a merge copies them into a live version.
+        """
+        if section not in ARTIFACTS:
+            raise ValueError(f"unknown bible section: {section}")
+        self.store.execute(
+            "INSERT OR REPLACE INTO bible VALUES (?,?,?,?)",
+            (world_id, version, section, content.model_dump_json()),
+        )
+
     def get(self, world_id: str, section: str, version: int | None = None):
         version = self.version(world_id) if version is None else version
         rows = self.store.query(

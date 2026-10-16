@@ -36,8 +36,14 @@ class Saved(Model):
     # The live world as it was when the goal began, to notice if it moved under us.
     base_hash: str = ""
     base_live: dict[str, dict] = Field(default_factory=dict)
+    # The draft is a real bible version: negative, so the world never points at it.
+    draft_version: int = 0
+    # The last trial run of the draft, shown with the merge.
+    trial: dict = Field(default_factory=dict)
     # Web domains the user said "always allow" for, and what the team did outside the draft.
     allowed_domains: list[str] = Field(default_factory=list)
+    # How this goal reads the web: ask once (default), all, per_site, none.
+    web_mode: str = "ask"
     audit: list[AuditEntry] = Field(default_factory=list)
     # Messages waiting for an agent, delivered at its next step.
     inbox: dict[str, list[str]] = Field(default_factory=dict)

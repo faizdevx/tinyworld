@@ -77,13 +77,26 @@ nothing until you press **Merge**. Then the residents live in it.
 python -m tinyworld.api.app          # then "Build with the team" on the home page
 ```
 
-**Honest status.** The studio, its console, budgets, permissions, diff and partial
-merge, replay and benchmark are built and tested with the scripted team and
-scripted-model clients, and checked in a browser. **None of it has been run with a
-real model yet**, so how well hosted or open-weight models drive the tool loop is
-unmeasured. Still missing: sprites and pathfinding in the scene, residents that run
-tool sessions, Postgres and workers. What is built and what is not, step by step,
-is in [docs/V6_PLAN.md](docs/V6_PLAN.md#where-v6-stands). The design follows
+- **A studio you can watch.** A tiled floor with rooms and doorways; pixel
+  characters, each with its own look, walking real paths between stations; a
+  card per task on the wall and a paper per written section on the drafting
+  table; a lit podium when you are needed; day and night from your clock.
+- **Tried before it is merged.** The draft is seeded in a scratch store and run
+  for a while; the merge card shows how many steps ran, who acted, and any
+  invariant problem. The draft itself is a real bible version that the world
+  does not point at until you merge.
+- **Residents who look before they act.** A resident who deliberates can look
+  around, recall memories, check promises and projects, then decide, with the
+  same rules checking the decision.
+
+**Honest status.** All of this is tested with the scripted team, and the studio
+has now had **two short live probes on an open-weight model** (Nemotron 3 Super
+120B through OpenRouter's free tier, with live web search). They found real
+problems: a researcher that never stopped searching, and a section reply cut off
+mid-JSON. Both are fixed and the fixes are tested, but the free daily quota ran
+out before a full build could be run live, so **a complete live build has still
+not happened**. Postgres and workers are not built. Details, step by step, are in
+[docs/V6_PLAN.md](docs/V6_PLAN.md#the-first-live-runs). The design follows
 [AgentCraft](https://github.com/blendi-remade/agentcraft): a foreman that owns
 the truth, a view that holds none, agents that use tools, a decision queue, and
 a human merge gate. It differs in building worlds that then run, in recording
@@ -498,10 +511,10 @@ tinyworld/
   llm/       clients (anthropic, openrouter, gemini, openai_compat), limiter, router,
              structured calls, trace and replay, ledger, fake, offline
   gm/        verbs, rules, adjudicator, conflicts, perception, master
-  agents/    persona, memory, retrieval, beliefs, reflection, planner, routine, agent
+  agents/    persona, memory, retrieval, beliefs, reflection, planner, routine, agent, toolmind
   world/     knowledge graph, projects
   studio/    protocol, task graph, state, agent session, foreman (team), policy, diffing,
-             console, replay, scripted team
+             console, replay, trial run, scripted team
   genesis/   bible, research (agent), web, critic, seeding, pipeline
   god/       parser, feasibility, compiler, channel
   sim/       loop, scene, commitments, tiers, scheduler, budget, chronicler, timeskip, replay
@@ -516,7 +529,7 @@ tinyworld/
 python -m pytest -q
 ```
 
-430 tests. Set `TINYWORLD_DEBUG=1` to check every committed event against the
+445 tests. Set `TINYWORLD_DEBUG=1` to check every committed event against the
 invariants as the tests run; CI does this.
 
 ## Results so far

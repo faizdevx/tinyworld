@@ -2,17 +2,8 @@
 // This view holds no logic. It draws snapshot + upserts and sends back intents.
 import { api, listen } from "./api.js";
 import { action, el, fill, setCrumbs, tag, toast } from "./ui.js";
+import { createScene } from "./scene.js";
 
-// Where each station sits in the scene, as a fraction of the canvas.
-const STATIONS = {
-  wall: { x: 0.14, y: 0.2, label: "Task wall" },
-  web: { x: 0.5, y: 0.14, label: "The web" },
-  library: { x: 0.86, y: 0.2, label: "Library" },
-  drafting: { x: 0.2, y: 0.62, label: "Drafting table" },
-  review: { x: 0.52, y: 0.66, label: "Review desk" },
-  podium: { x: 0.82, y: 0.62, label: "Decision podium" },
-  lounge: { x: 0.5, y: 0.9, label: "Lounge" },
-};
 const SECTIONS = [
   "premise", "divergence", "geography", "politics", "economy", "technology",
   "culture", "factions", "figures", "tensions", "digest",
@@ -124,77 +115,11 @@ export async function showStudio(view, worldId) {
 
   // -- the scene -------------------------------------------------------
 
-  function place(agent) {
-    const st = STATIONS[agent.station] || STATIONS.lounge;
-    const mates = [...S.agents.values()].filter((a) => a.station === agent.station);
-    const index = mates.findIndex((a) => a.id === agent.id);
-    return { x: st.x + (index - (mates.length - 1) / 2) * 0.055, y: st.y + (index % 2) * 0.03 };
-  }
-
-  function draw() {
-    const ratio = window.devicePixelRatio || 1;
-    const w = scene.clientWidth, h = scene.clientHeight;
-    if (canvas.width !== Math.round(w * ratio) || canvas.height !== Math.round(h * ratio)) {
-      canvas.width = Math.round(w * ratio); canvas.height = Math.round(h * ratio);
-    }
-    const g = canvas.getContext("2d");
-    g.setTransform(ratio, 0, 0, ratio, 0, 0);
-    const css = getComputedStyle(document.documentElement);
-    const ink = css.getPropertyValue("--ink").trim() || "#222";
-    const muted = css.getPropertyValue("--muted").trim() || "#888";
-    const soft = css.getPropertyValue("--soft").trim() || "#eee";
-    const line = css.getPropertyValue("--line").trim() || "#ddd";
-    g.clearRect(0, 0, w, h);
-    g.textAlign = "center";
-    const anyOpen = [...S.decisions.values()].some((d) => d.status === "open");
-    for (const [key, st] of Object.entries(STATIONS)) {
-      const x = st.x * w, y = st.y * h;
-      g.fillStyle = soft; g.strokeStyle = line;
-      g.beginPath(); g.roundRect(x - 52, y - 26, 104, 52, 12); g.fill(); g.stroke();
-      g.fillStyle = muted; g.font = "12px system-ui, sans-serif"; g.fillText(st.label, x, y - 34);
-      if (key === "podium" && anyOpen) {
-        g.fillStyle = "#c9a227"; g.beginPath(); g.arc(x + 44, y - 20, 7, 0, 7); g.fill();
-        g.fillStyle = "#fff"; g.fillText("!", x + 44, y - 16);
-      }
-    }
-    for (const agent of S.agents.values()) {
-      const target = place(agent);
-      const cur = S.pos.get(agent.id) || { x: 0.5, y: 0.9 };
-      cur.x += (target.x - cur.x) * 0.12; cur.y += (target.y - cur.y) * 0.12;
-      S.pos.set(agent.id, cur);
-      const x = cur.x * w, y = cur.y * h;
-      const busy = agent.state !== "idle" && agent.state !== "done";
-      g.globalAlpha = agent.active ? 1 : 0.35;
-      g.fillStyle = agent.color;
-      g.beginPath(); g.arc(x, y, busy ? 15 : 12, 0, 7); g.fill();
-      const ring = agent.state === "waiting_user" ? "#c9a227" : agent.state === "error" ? "#b5382c"
-        : agent.paused ? "#8b857a" : S.picked === agent.id ? ink : null;
-      if (ring) { g.strokeStyle = ring; g.lineWidth = 3; g.stroke(); g.lineWidth = 1; }
-      g.fillStyle = "#fff"; g.font = "bold 12px system-ui"; g.fillText(agent.name[0], x, y + 4);
-      g.fillStyle = ink; g.font = "12px system-ui"; g.fillText(agent.name, x, y - 22);
-      if (agent.activity && busy) { g.fillStyle = muted; g.font = "11px system-ui"; g.fillText(agent.activity.slice(0, 34), x, y + 30); }
-      g.globalAlpha = 1;
-    }
-  }
-
+  const world = createScene(canvas, () => S);
   canvas.addEventListener("click", (event) => {
-    const rect = canvas.getBoundingClientRect();
-    const px = (event.clientX - rect.left) / rect.width, py = (event.clientY - rect.top) / rect.height;
-    let hit = null;
-    for (const agent of S.agents.values()) {
-      const p = S.pos.get(agent.id);
-      if (p && Math.hypot((p.x - px) * rect.width, (p.y - py) * rect.height) < 20) hit = agent.id;
-    }
-    S.picked = hit;
+    S.picked = world.agentAt(event.clientX, event.clientY);
     render();
   });
-
-  let frame = 0;
-  function loop() {
-    if (!canvas.isConnected) return;
-    draw();
-    frame = requestAnimationFrame(loop);
-  }
 
   // -- panels ----------------------------------------------------------
 
@@ -390,7 +315,6 @@ export async function showStudio(view, worldId) {
   }
 
   const close = listen(`/ws/studio/${worldId}`, apply);
-  loop();
   render();
-  return () => { cancelAnimationFrame(frame); close(); document.removeEventListener("keydown", onKey); document.title = "TinyWorld"; };
+  return () => { world.stop(); close(); document.removeEventListener("keydown", onKey); document.title = "TinyWorld"; };
 }
