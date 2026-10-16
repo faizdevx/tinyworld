@@ -116,9 +116,20 @@ CONFIRMATION = re.compile(
     r"\b.*\b(proceed|continue|start|begin|go ahead|carry on|move on|do (this|that|it))\b",
     re.IGNORECASE,
 )
+# Questions about how the team works ("which section next?") are not the user's.
+PROCESS_QUESTION = re.compile(
+    r"\b(which|what) (section|task|step|part)s?\b.*\b(next|first|now|work on)\b"
+    r"|\bwork on next\b|\b(the|our|this) plan\b|\bany part of the plan\b"
+    r"|\bgenuine choice\b",
+    re.IGNORECASE,
+)
 # Two searches are "the same" when most of their words are.
 NEAR_DUPLICATE = 0.6
 MAX_FIX_ROUNDS = 2
+# Rounds of "Request changes" before only Merge and Reject are offered.
+MAX_CHANGE_ROUNDS = 2
+# Questions to the user per goal. Small models ask far too many.
+MAX_QUESTIONS = 3
 BUDGET_STEPS = ["Add $1", "Add $5", "Stop"]
 
 
@@ -207,6 +218,11 @@ class Foreman:
         self._queries: dict[str, list[str]] = {}
         # Planning tasks that have already put their plan on the wall.
         self._planned: set[str] = set()
+        self._questions = 0
+        # The checks' findings go back to the writers once per goal; requested
+        # changes are capped.
+        self._auto_fixed = False
+        self._change_rounds = 0
         # Sections each review task has already sent back.
         self._fixes_asked: dict[str, set[str]] = {}
         # The result ids of each task's last search, so "fetch the first one" works.
@@ -280,6 +296,9 @@ class Foreman:
         studio.data.web_mode = "ask"
         self._fix_rounds = 0
         self._budget_asked = False
+        self._auto_fixed = False
+        self._change_rounds = 0
+        self._questions = 0
         brief = f"The premise to build a world from:\n{goal_text}"
         if live:
             brief = (
@@ -422,10 +441,13 @@ class Foreman:
         if known is not None:
             self.studio.answer(decision.id, known)
         elif self.auto_answer:
-            self.studio.answer(
-                decision.id, decision.options[0] if decision.options else "",
-                "go with your judgement",
-            )
+            option = decision.options[0] if decision.options else ""
+            if decision.kind == "merge":
+                # "Request changes" with nobody to say what to change only loops.
+                option = "Merge anyway" if "Merge anyway" in decision.options else "Merge"
+                if option == "Merge anyway":
+                    self.studio.log("auto", "override", "merged automatically with real-person findings open")
+            self.studio.answer(decision.id, option, "go with your judgement")
 
     async def run(self) -> None:
         graph = self.studio.graph
@@ -690,6 +712,10 @@ class Foreman:
             section = entry.get("section")
             if section is not None and section not in WRITABLE:
                 section = None
+            if kind == "digest":
+                section = "digest"  # a digest task writes the digest, whatever it says
+            elif kind == "review":
+                section = None
             task = graph.create(
                 str(entry.get("title", f"Task {index + 1}")), kind=kind,
                 deps=deps, section=section, created_by=created_by,
@@ -734,17 +760,25 @@ class Foreman:
             ensure(section, base, f"Write {section}")
         ensure("figures", [by_section[s].id for s in ("geography", "factions", "economy")], "Write figures")
         ensure("tensions", [by_section["figures"].id], "Write tensions")
-        review = next((t for t in graph.all() if t.kind == "review"), None)
+        reviews = [t for t in graph.all() if t.kind == "review"]
         section_ids = [by_section[s].id for s in SECTIONS]
-        if review is None:
+        if not reviews:
             review = graph.create("Review the draft", kind="review", deps=section_ids, created_by="marlow")
             added.append("review")
             self.studio.task_changed(review.id)
-        else:
-            # The review must come after every section, whatever the lead said.
-            graph.set_deps(review.id, sorted(set(review.deps) | set(section_ids)))
-            self.studio.task_changed(review.id)
-        ensure("digest", [review.id], "Write the digest", kind="digest")
+            reviews = [review]
+        for review in reviews:
+            # A review comes after every section, whatever the lead said.
+            if review.status == "todo":
+                graph.set_deps(review.id, sorted(set(review.deps) | set(section_ids)))
+                self.studio.task_changed(review.id)
+        review_ids = [r.id for r in reviews]
+        digest_id = ensure("digest", review_ids, "Write the digest", kind="digest")
+        digest = graph.get(digest_id)
+        if digest.status == "todo":
+            # And the digest after the review: it sums up the finished world.
+            graph.set_deps(digest_id, sorted(set(digest.deps) | set(review_ids)))
+            self.studio.task_changed(digest_id)
         if added:
             self.studio.say(
                 "The plan was missing " + ", ".join(added) + "; added to the wall.",
@@ -1027,6 +1061,13 @@ class Foreman:
             question = str(args.get("question", "")).strip()
             if not question:
                 return "give a question"
+            if PROCESS_QUESTION.search(question):
+                return (
+                    "That is a question about how the team works, which is yours to decide. "
+                    "Pick the sensible option and carry on."
+                )
+            if self._questions >= MAX_QUESTIONS:
+                return "The user has answered enough questions for this goal; decide yourself."
             if CONFIRMATION.search(question):
                 # Small models ask leave to carry on. The user should not see that.
                 return (
@@ -1039,6 +1080,7 @@ class Foreman:
                 options=options, context=str(args.get("context", ""))[:500],
                 task_id=task.id,
             )
+            self._questions += 1
             future = studio.ask(decision)
             self._set(agent_id, "waiting_user", "podium", question[:80], task.id)
             self._preset(decision)
@@ -1195,8 +1237,31 @@ class Foreman:
             studio.log("marlow", "conflict", ", ".join(changed))
             await self.run()
             return
-        studio.update_goal(status="review")
         bible = self._draft_bible()
+        blocking_now = [f for f in critic.check(bible) if f.blocking]
+        if blocking_now and not self._auto_fixed:
+            # Like a failing CI run going back to the worker once: each section's
+            # problems go to its writer, word for word, before you are asked.
+            self._auto_fixed = True
+            by_section: dict[str, list[str]] = {}
+            for f in blocking_now:
+                section = f.section if f.section in WRITABLE else "figures"
+                by_section.setdefault(section, []).append(f.text)
+            for section, texts in by_section.items():
+                fix = studio.graph.create(
+                    f"Fix {section}: {len(texts)} problem(s) found by the checks",
+                    kind="section", section=section, created_by="vera", priority=6,
+                    description="The automatic checks found these problems. Fix every one, "
+                    "then write the whole section again:\n" + "\n".join(f"- {t}" for t in texts[:12]),
+                )
+                studio.task_changed(fix.id)
+            studio.say(
+                f"{len(blocking_now)} problem(s) found by the checks go back to their writers once.",
+                "vera", "system",
+            )
+            await self.run()
+            return
+        studio.update_goal(status="review")
         findings = critic.check(bible)
         # Try the world before asking to merge it, as a CI run is shown with a review.
         from tinyworld.studio.trial import trial as try_world
@@ -1224,6 +1289,9 @@ class Foreman:
                 "\nThe reviewer flagged real, living people: "
                 + "; ".join(f.text[:80] for f in real[:3])
             )
+        if self._change_rounds >= MAX_CHANGE_ROUNDS:
+            options = [o for o in options if o != "Request changes"]
+            summary += "\nThe team has already reworked this draft twice; merge or reject it."
         decision = Decision(
             id="", agent_id="marlow", kind="merge",
             question="Merge this draft as the world?", options=options, context=summary,
@@ -1258,6 +1326,7 @@ class Foreman:
             studio.update_goal(status="merged", progress=1.0)
             studio.say("The world is merged. It is ready to seed.", "marlow", "system")
         elif answered.answer == "Request changes":
+            self._change_rounds += 1
             note = answered.note or "the user asked for changes"
             task = studio.graph.create(
                 "Apply the requested changes", kind="plan", created_by="user", priority=10,

@@ -145,6 +145,16 @@ MINIMUM = {
 
 def too_thin(section: str, content: dict) -> str | None:
     """Why ``content`` does not yet count as the section, or None if it does."""
+    if section == "premise":
+        from datetime import date
+
+        try:
+            date.fromisoformat(str(content.get("start_date", "")))
+        except ValueError:
+            return "premise needs start_date as a real date, YYYY-MM-DD (for example 1946-03-01)"
+        if not str(content.get("place", "")).strip():
+            return "premise needs a place"
+        return None
     rule = MINIMUM.get(section)
     if rule is None:
         return None

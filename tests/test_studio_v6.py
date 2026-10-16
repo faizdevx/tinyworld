@@ -1108,3 +1108,86 @@ def test_a_long_list_can_be_written_a_few_at_a_time():
     assert names == ["A", "B", "C", "D"]
     text = foreman._task_text(task)
     assert "places: Chowk, Aminabad" in text and "Aim for about 8 figures" in text
+
+
+
+def test_a_digest_the_lead_planned_too_early_waits_for_the_review():
+    """Qwen 2.5 7B planned "Digest of completed tasks" with no dependencies; it ran first."""
+    store, world, studio, foreman = build()
+    plan = studio.graph.create("Plan the world", kind="plan")
+    tools = {t.name: t for t in foreman._tools(plan, studio.agent("marlow"))}
+    run(tools["plan_tasks"].run({"tasks": [
+        {"title": "Research it", "kind": "research"},
+        {"title": "Review and refine the draft", "kind": "review"},
+        {"title": "Digest of completed tasks", "kind": "digest"},
+    ]}))
+    foreman._complete_plan()
+    tasks = studio.graph.all()
+    digest = [t for t in tasks if t.kind == "digest"]
+    review = next(t for t in tasks if t.kind == "review")
+    assert len(digest) == 1 and digest[0].section == "digest"
+    assert review.id in digest[0].deps
+    figures = next(t for t in tasks if t.section == "figures")
+    assert figures.id in review.deps
+
+
+
+def test_a_premise_without_a_real_start_date_is_not_saved():
+    """Both local builds saved a premise with start_date ''."""
+    store, world, studio, foreman = build()
+    plan = studio.graph.create("Plan the world", kind="plan")
+    tools = {t.name: t for t in foreman._tools(plan, studio.agent("marlow"))}
+    bad = run(tools["write_section"].run({"section": "premise", "content": {"place": "A town", "start_date": ""}}))
+    assert "start_date as a real date" in bad
+    good = run(tools["write_section"].run({"section": "premise", "content": {"place": "A town", "start_date": "1946-03-01"}}))
+    assert good.startswith("premise saved")
+
+
+def test_questions_about_how_the_team_works_are_refused_and_there_is_a_budget():
+    """Qwen 2.5 7B asked "Which section should we work on next?" and similar."""
+    store, world, studio, foreman = build(auto=True)
+    plan = studio.graph.create("Plan the world", kind="plan")
+    tools = {t.name: t for t in foreman._tools(plan, studio.agent("marlow"))}
+    for q in ("Which section should we work on next?", "Is there any part of the plan that requires a genuine choice?"):
+        assert "yours to decide" in run(tools["ask_user"].run({"question": q, "options": ["a", "b"]}))
+    asked = [run(tools["ask_user"].run({"question": f"Real question {i}?", "options": ["x"]})) for i in range(5)]
+    assert sum(a.startswith("The user answered") for a in asked) == 3
+    assert "decide yourself" in asked[-1]
+
+
+def test_a_flagged_draft_in_automatic_mode_is_merged_with_a_logged_override_not_looped():
+    store, world, studio, foreman = build(client=FlagsARealPerson(ask=False), auto=True)
+
+    async def drive():
+        foreman.submit(GOAL)
+        await foreman.wait()
+
+    run(drive())
+    assert studio.data.goal.status == "merged"
+    merges = [d for d in studio.data.decisions if d.kind == "merge"]
+    assert len(merges) == 1 and merges[0].answer == "Merge anyway"
+    assert any(a.actor == "auto" and a.action == "override" for a in studio.data.audit)
+
+
+def test_problems_found_by_the_checks_go_back_to_their_writers_once():
+    class BadHomes(ScriptedTeam):
+        async def complete(self, request, model, effort):
+            result = await super().complete(request, model, effort)
+            if "SECTION: figures" in request.user and '"write_section"' in result.text and "Fix figures" not in request.user:
+                step = json.loads(result.text)
+                for f in step["args"]["content"]["figures"]:
+                    f["home"] = "Nowhere Street"
+                result.text = json.dumps(step)
+            return result
+
+    store, world, studio, foreman = build(client=BadHomes(ask=False), auto=True)
+
+    async def drive():
+        foreman.submit(GOAL)
+        await foreman.wait()
+
+    run(drive())
+    fixes = [t for t in studio.graph.all() if t.title.startswith("Fix figures:") and "found by the checks" in t.title]
+    assert len(fixes) == 1 and "Nowhere Street" in fixes[0].description
+    assert studio.data.goal.status == "merged"
+    assert all(f["home"] != "Nowhere Street" for f in studio.data.draft["figures"]["figures"])
