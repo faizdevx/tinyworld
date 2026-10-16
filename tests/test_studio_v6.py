@@ -915,3 +915,165 @@ def test_a_draft_that_cannot_run_fails_its_trial():
     good = run(trial(bible, ticks=4))
     assert good.ok and good.ticks == 4 and good.people >= 8
     assert "Trial run: 4 steps" in good.line()
+
+
+# -- what the local open-weight run found -------------------------------------
+
+
+def test_the_shape_of_a_section_is_spelled_out_with_its_real_field_names():
+    from tinyworld.genesis.bible import ARTIFACTS
+    from tinyworld.studio import shapes
+
+    geo = shapes.shape(ARTIFACTS["geography"])
+    assert "connects_to: [{to: text, travel_minutes: number" in geo
+    assert "kind: text" in geo and "type" not in geo
+    figures = shapes.shape(ARTIFACTS["figures"])
+    assert "goals: [text, ...]" in figures and "aptitudes: {text: number}" in figures
+
+
+def test_near_miss_field_names_from_a_small_model_are_read_and_reported():
+    """Qwen 2.5 7B wrote `type` and `connected_to: ["Aminabad"]` every time."""
+    from tinyworld.genesis.bible import ARTIFACTS
+    from tinyworld.studio import shapes
+
+    notes = []
+    data = {
+        "places": [
+            {"name": "Chowk", "type": "street", "connected_to": ["Aminabad"]},
+            {"name": "Aminabad", "type": "district", "connected_to": ["Chowk"]},
+        ],
+        "connections": [{"from": "Chowk", "to": "Aminabad"}],
+    }
+    fixed = shapes.normalise(ARTIFACTS["geography"], data, notes)
+    geography = ARTIFACTS["geography"].model_validate(fixed)
+    assert geography.places[0].kind == "street"
+    assert geography.places[0].connects_to[0].to == "Aminabad"
+    assert "places.0.type read as kind" in notes
+    assert "connections is not a field here, ignored" in notes
+
+
+def test_write_section_saves_a_near_miss_and_says_what_it_corrected():
+    store, world, studio, foreman = build(client=ScriptedTeam(ask=False))
+    task = studio.graph.create("Write geography", kind="section", section="geography")
+    tools = {t.name: t for t in foreman._tools(task, studio.agent("juno"))}
+    content = {"places": [{"name": "Chowk", "type": "street", "connected_to": ["Aminabad"]},
+                          {"name": "Aminabad", "type": "district"}]}
+    reply = run(tools["write_section"].run({"section": "geography", "content": content}))
+    assert reply.startswith("geography saved") and "type read as kind" in reply
+    assert studio.data.draft["geography"]["places"][0]["kind"] == "street"
+    # A section given as a JSON string is read too.
+    reply = run(tools["write_section"].run({"section": "culture", "content": json.dumps({"overview": "x", "norms": ["elders first"]})}))
+    assert reply.startswith("culture saved")
+    # And a real failure says what the shape is.
+    bad = run(tools["write_section"].run({"section": "figures", "content": {"figures": [{"name": "A"}]}}))
+    assert "was not saved" in bad and "The shape is:" in bad
+
+
+def test_a_section_task_shows_its_exact_shape():
+    store, world, studio, foreman = build()
+    task = studio.graph.create("Write geography", kind="section", section="geography")
+    text = foreman._task_text(task)
+    assert "The exact JSON shape of geography" in text and "connects_to: [{to: text" in text
+
+
+def test_a_plan_that_reads_well_but_covers_little_is_completed_by_the_foreman():
+    """Qwen 2.5 7B planned "Develop the characters" and "Define the plot": no sections."""
+
+    class VaguePlanner(ScriptedTeam):
+        prompts = []
+
+        async def complete(self, request, model, effort):
+            self.prompts.append((request.context.agent or "", request.user))
+            if request.role.startswith("studio.") and "KIND: plan" in request.user and "Plan the world" in request.user:
+                used = request.user.count("you used ")
+                if used == 0:
+                    from tinyworld.fixtures import lucknow
+                    text = json.dumps({"tool": "write_section", "args": {"section": "premise", "content": lucknow.PREMISE}})
+                elif used == 1:
+                    text = json.dumps({"tool": "plan_tasks", "args": {"tasks": [
+                        {"title": "Research the setting", "kind": "research"},
+                        {"title": "Develop the characters and their interactions", "kind": "custom"},
+                        {"title": "Define the plot and storylines"},
+                        {"title": "Write the places", "kind": "section", "section": "places"},
+                        {"title": "Write geography", "kind": "section", "section": "geography", "deps": [0]},
+                    ]}})
+                else:
+                    text = json.dumps({"tool": "finish", "args": {"summary": "planned"}})
+                return LLMResult(text=text, model="script")
+            return await super().complete(request, model, effort)
+
+    client = VaguePlanner(ask=False)
+    store, world, studio, foreman = build(client=client)
+
+    async def drive():
+        foreman.submit(GOAL)
+        await foreman.wait()
+
+    run(drive())
+    plan_reply = [u for who, u in client.prompts if "you used plan_tasks" in u]
+    assert plan_reply and "Not created:" in plan_reply[0] and "kind must be research" in plan_reply[0]
+    assert "section must be one of" in plan_reply[0]
+    sections = {t.section for t in studio.graph.all() if t.kind in ("section", "digest")}
+    assert sections >= {"divergence", "geography", "figures", "tensions", "digest"}
+    feed = " ".join(f.text for f in studio.data.feed)
+    assert "The plan was missing" in feed
+    review = next(t for t in studio.graph.all() if t.kind == "review")
+    figures = next(t for t in studio.graph.all() if t.section == "figures")
+    assert figures.id in review.deps
+    assert studio.data.goal.status == "merged"
+
+
+def test_a_plan_task_can_only_put_its_plan_up_once():
+    store, world, studio, foreman = build()
+    plan = studio.graph.create("Plan the world", kind="plan")
+    tools = {t.name: t for t in foreman._tools(plan, studio.agent("marlow"))}
+    entry = {"tasks": [{"title": "Research it", "kind": "research"}]}
+    assert run(tools["plan_tasks"].run(entry)) == "created 1 tasks"
+    assert "already on the wall" in run(tools["plan_tasks"].run(entry))
+    assert len([t for t in studio.graph.all() if t.title == "Research it"]) == 1
+
+
+def test_fetch_page_takes_an_id_a_number_or_a_url_as_small_models_give_them():
+    """Qwen 2.5 7B called fetch_page with {"url": ...} and {"id": 0}; nothing was ever read."""
+    pages = {f"https://en.wikipedia.org/wiki/P{i}": (f"Lucknow page {i}", f"text {i}") for i in range(3)}
+    store, world, studio, foreman = web_world(pages)
+    studio.data.web_mode = "all"
+    task = studio.graph.create("Research: Lucknow", kind="research")
+    tools = {t.name: t for t in foreman._tools(task, studio.agent("iris"))}
+    listing = run(tools["web_search"].run({"query": "Lucknow page"}))
+    assert "fetch_page(id)" in listing
+    first = listing.split(":")[0]
+    for args in ({"id": first}, {"id": 0}, {"id": "1"}, {"url": "https://en.wikipedia.org/wiki/P1"}):
+        assert "first 1500 characters" in run(tools["fetch_page"].run(args)), args
+    assert "no such result" in run(tools["fetch_page"].run({"id": "r99"}))
+    assert "ask_user" not in tools
+
+
+def test_a_reviewer_cannot_loop_on_one_section_and_a_capped_review_still_counts():
+    """Qwen 2.5 7B sent the premise back again and again until it ran out of steps."""
+    store, world, studio, foreman = build()
+    review = studio.graph.create("Review the draft", kind="review")
+    tools = {t.name: t for t in foreman._tools(review, studio.agent("vera"))}
+    first = run(tools["request_fix"].run({"section": "premise", "note": "tighten it"}))
+    assert first.startswith("asked marlow to fix premise")
+    again = run(tools["request_fix"].run({"section": "premise", "note": "tighten it"}))
+    assert "already being fixed" in again
+    assert "Nothing sent" in run(tools["request_fix"].run({"section": "plot", "note": "x"}))
+    assert len([t for t in studio.graph.all() if t.title.startswith("Fix premise")]) == 1
+
+    from tinyworld.studio.session import SessionResult
+
+    studio.graph.move(review.id, "doing", assignee="vera")
+    foreman._close(review.id, "vera", SessionResult("capped", "", 10, ["check_draft", "review_draft"]))
+    assert studio.graph.get(review.id).status == "done"
+
+
+
+def test_an_empty_or_thin_section_is_not_saved():
+    store, world, studio, foreman = build()
+    task = studio.graph.create("Write geography", kind="section", section="geography")
+    tools = {t.name: t for t in foreman._tools(task, studio.agent("juno"))}
+    for content in ({"nope": 1}, {"places": [{"name": "Only one"}]}):
+        reply = run(tools["write_section"].run({"section": "geography", "content": content}))
+        assert "not saved" in reply and "at least two places" in reply
+    assert "geography" not in studio.data.draft

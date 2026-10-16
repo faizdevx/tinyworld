@@ -25,7 +25,7 @@ from tinyworld.genesis.bible import (
 from tinyworld.genesis.research import SearchHit, SearchProvider
 from tinyworld.llm.structured import StructuredLLM
 from tinyworld.llm.types import CallContext
-from tinyworld.studio import console, diffing, policy
+from tinyworld.studio import console, diffing, policy, shapes
 from tinyworld.studio.protocol import (
     MERGE_OPTIONS, PERMISSION_OPTIONS, Agent, AgentState, Decision, Station, Task,
 )
@@ -95,8 +95,9 @@ PROCEDURE = {
     "review": (
         "How to do it:\n"
         "1. check_draft, then review_draft.\n"
-        "2. request_fix only for problems that would stop the world being simulated.\n"
-        "3. finish with a one-line verdict."
+        "2. request_fix only for problems that would stop the world being simulated, "
+        "at most once per section.\n"
+        "3. finish with a one-line verdict. A review is done once you have read the draft."
     ),
     "plan": (
         "How to do it:\n"
@@ -197,6 +198,12 @@ class Foreman:
         self._asking: dict[str, asyncio.Future] = {}
         # Searches made per task, so a retry is told what was already tried.
         self._queries: dict[str, list[str]] = {}
+        # Planning tasks that have already put their plan on the wall.
+        self._planned: set[str] = set()
+        # Sections each review task has already sent back.
+        self._fixes_asked: dict[str, set[str]] = {}
+        # The result ids of each task's last search, so "fetch the first one" works.
+        self._latest: dict[str, list[str]] = {}
         self.store = studio.store
         self.world_id = studio.world_id
         self._ensure_cast()
@@ -511,6 +518,9 @@ class Foreman:
         # Running out of steps after saving the work still counts: the work is there.
         salvaged = result.status == "capped" and produced and task.kind in (
             "research", "section", "digest",
+        ) or (
+            result.status == "capped" and task.kind == "review"
+            and "review_draft" in result.used
         )
         ok = (result.status == "finished" and produced) or salvaged
         if salvaged:
@@ -521,6 +531,8 @@ class Foreman:
                 # existing world, touch only the part a change most often needs.
                 touch = ["factions"] if studio.data.base_live else None
                 self._plan(standard_plan(self._topics(), touch=touch), "marlow")
+            elif task.kind == "plan" and not studio.data.base_live:
+                self._complete_plan()
             if task.kind == "plan" and "rebase" in task.title.lower():
                 # The team has looked at the changed world; judge against it from now on.
                 studio.data.base_live = self._live_sections()
@@ -585,6 +597,11 @@ class Foreman:
         extra = ""
         if task.section in SECTION_BRIEFS:
             extra = "\nWhat this section is: " + SECTION_BRIEFS[task.section]
+        if task.section in ARTIFACTS:
+            extra += (
+                f"\nThe exact JSON shape of {task.section} (use these field names): "
+                + shapes.shape(ARTIFACTS[task.section])
+            )
         if task.kind == "research":
             extra = "\nFind facts about everyday life, institutions, economy and technology."
         procedure = PROCEDURE.get(task.kind)
@@ -652,6 +669,58 @@ class Foreman:
             self.studio.task_changed(task.id)
         return created
 
+    def _complete_plan(self) -> list[str]:
+        """Add what a world needs and the lead's plan left out, with the usual order.
+
+        A small model's plan reads well and covers little ("develop the
+        characters", "define the plot"). The foreman, not the model, makes sure
+        every section has a task, that figures wait for places and factions, and
+        that a review and a digest come last.
+        """
+        graph = self.studio.graph
+        tasks = graph.all()
+        by_section = {t.section: t for t in tasks if t.kind in ("section", "digest") and t.section}
+        research = [t.id for t in tasks if t.kind == "research"]
+        if not research:
+            for topic in self._topics():
+                created = graph.create(f"Research: {topic}", kind="research", created_by="marlow")
+                research.append(created.id)
+                self.studio.task_changed(created.id)
+        added: list[str] = []
+
+        def ensure(section: str, deps: list[str], title: str, kind: str = "section") -> str:
+            if section in by_section:
+                return by_section[section].id
+            created = graph.create(title, kind=kind, section=section, deps=deps, created_by="marlow")
+            by_section[section] = created
+            added.append(section)
+            self.studio.task_changed(created.id)
+            return created.id
+
+        div = ensure("divergence", research, "What changes: the divergence")
+        base = [div, *research]
+        for section in ("geography", "politics", "economy", "technology", "culture", "factions"):
+            ensure(section, base, f"Write {section}")
+        ensure("figures", [by_section[s].id for s in ("geography", "factions", "economy")], "Write figures")
+        ensure("tensions", [by_section["figures"].id], "Write tensions")
+        review = next((t for t in graph.all() if t.kind == "review"), None)
+        section_ids = [by_section[s].id for s in SECTIONS]
+        if review is None:
+            review = graph.create("Review the draft", kind="review", deps=section_ids, created_by="marlow")
+            added.append("review")
+            self.studio.task_changed(review.id)
+        else:
+            # The review must come after every section, whatever the lead said.
+            graph.set_deps(review.id, sorted(set(review.deps) | set(section_ids)))
+            self.studio.task_changed(review.id)
+        ensure("digest", [review.id], "Write the digest", kind="digest")
+        if added:
+            self.studio.say(
+                "The plan was missing " + ", ".join(added) + "; added to the wall.",
+                "marlow", "system",
+            )
+        return added
+
     # -- tools ----------------------------------------------------------
 
     def _tools(self, task: Task, agent: Agent) -> list[Tool]:
@@ -679,17 +748,49 @@ class Foreman:
             if not hits:
                 return "no results"
             lines = []
+            latest = []
             for hit in hits:
                 key = f"r{len(self._hits) + 1}"
                 self._hits[key] = hit
+                latest.append(key)
                 lines.append(f"{key}: {hit.title} - {hit.url}\n    {hit.snippet[:160]}")
-            return "\n".join(lines)
+            self._latest[task.id] = latest
+            return "\n".join(lines) + "\nRead one with fetch_page(id), for example fetch_page(r" + latest[0][1:] + ")."
+
+        def find_hit(args: dict) -> SearchHit | None:
+            """A result by id ("r3"), by number (3, or 0 for the first of the last search), or by address."""
+            url = str(args.get("url", "")).strip()
+            ref = args.get("id", args.get("result", ""))
+            if url:
+                for hit in self._hits.values():
+                    if hit.url == url:
+                        return hit
+                from tinyworld.genesis.web import public_url
+
+                return SearchHit(url=url, title=url, provider="web") if public_url(url) else None
+            text = str(ref).strip().lower()
+            if text in self._hits:
+                return self._hits[text]
+            if text.startswith("r") and text[1:].isdigit():
+                return self._hits.get(text)
+            if text.isdigit():
+                n = int(text)
+                latest = self._latest.get(task.id, [])
+                if f"r{n}" in self._hits and n > len(latest):
+                    return self._hits[f"r{n}"]
+                # Small numbers mean a position in the last list of results.
+                if latest and n < len(latest):
+                    return self._hits[latest[n]] if n == 0 else self._hits[latest[n - 1]]
+                return self._hits.get(f"r{n}")
+            if text.startswith("http"):
+                return find_hit({"url": text})
+            return None
 
         async def fetch_page(args: dict) -> str:
-            ref = str(args.get("id", "")).strip()
-            hit = self._hits.get(ref)
+            hit = find_hit(args)
             if hit is None:
-                return f"unknown result {ref!r}; use an id from web_search"
+                known = ", ".join(self._latest.get(task.id, [])[:6]) or "none yet: use web_search first"
+                return f"no such result; give the id of one, for example {known}"
             domain = policy.domain_of(hit.url)
             if not policy.allowed(domain, studio.data.allowed_domains) and studio.data.web_mode == "ask":
                 # One question for the whole build, not one per site.
@@ -789,16 +890,36 @@ class Foreman:
             if section not in WRITABLE:
                 return f"{section!r} is not a section. Sections: {', '.join(WRITABLE)}"
             content = args.get("content")
+            if isinstance(content, str):
+                try:
+                    content = json.loads(content)
+                except ValueError:
+                    pass
             if not isinstance(content, dict):
-                return "content must be a JSON object matching the section"
+                return (
+                    "content must be a JSON object with this shape: "
+                    + shapes.shape(ARTIFACTS[section])
+                )
+            model = ARTIFACTS[section]
+            notes: list[str] = []
+            content = shapes.normalise(model, content, notes)
             try:
-                valid = ARTIFACTS[section].model_validate(content)
+                valid = model.model_validate(content)
             except ValidationError as exc:
                 problems = "; ".join(
                     f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}"
                     for e in exc.errors()[:6]
                 )
-                return f"{section} was not saved. Fix: {problems}"
+                return (
+                    f"{section} was not saved. Fix: {problems}. The shape is: "
+                    + shapes.shape(model)
+                )
+            thin = shapes.too_thin(section, valid.model_dump(mode="json"))
+            if thin:
+                return (
+                    f"{section} was not saved: {thin}. The shape is: " + shapes.shape(model)
+                    + (". Corrections made: " + "; ".join(notes[:6]) if notes else "")
+                )
             studio.data.draft[section] = valid.model_dump(mode="json")
             if studio.data.draft_version:
                 BibleStore(self.store).put_at(
@@ -806,15 +927,47 @@ class Foreman:
                 )
             studio.emit("draft.upsert", section=section)
             studio.save()
+            if notes:
+                return (
+                    f"{section} saved to the draft, after these corrections: "
+                    + "; ".join(notes[:8])
+                    + ". Use the real field names next time."
+                )
             return f"{section} saved to the draft"
 
         async def plan_tasks(args: dict) -> str:
+            # One plan per planning task: a second call would put everything up twice.
+            if task.id in self._planned:
+                return "The plan is already on the wall. Do not plan again; finish now."
             tasks = args.get("tasks")
             if not isinstance(tasks, list) or not tasks:
                 return "give a list of tasks: [{title, kind, section?, deps?}]"
-            clean = [t for t in tasks if isinstance(t, dict)]
-            ids = self._plan(clean, agent_id)
-            return f"created {len(ids)} tasks"
+            clean, problems = [], []
+            for index, entry in enumerate(tasks):
+                if not isinstance(entry, dict) or not str(entry.get("title", "")).strip():
+                    problems.append(f"task {index}: needs a title")
+                    continue
+                kind = entry.get("kind")
+                if kind not in ("research", "section", "review", "digest"):
+                    problems.append(
+                        f"task {index} ({entry.get('title')!r}): kind must be research, "
+                        "section, review or digest"
+                    )
+                    continue
+                if kind == "section" and entry.get("section") not in WRITABLE:
+                    problems.append(
+                        f"task {index} ({entry.get('title')!r}): section must be one of "
+                        + ", ".join(WRITABLE)
+                    )
+                    continue
+                clean.append(entry)
+            ids = self._plan(clean, agent_id) if clean else []
+            if ids:
+                self._planned.add(task.id)
+            reply = f"created {len(ids)} tasks"
+            if problems:
+                reply += ". Not created: " + "; ".join(problems[:6])
+            return reply
 
         async def send_message(args: dict) -> str:
             target = self.names().get(str(args.get("to", "")).lstrip("@").lower())
@@ -867,10 +1020,21 @@ class Foreman:
         async def request_fix(args: dict) -> str:
             section = str(args.get("section", "")).strip()
             note = str(args.get("note", "")).strip()
-            if section not in SECTIONS or not note:
-                return f"give a section from {', '.join(SECTIONS)} and a note"
+            if section not in WRITABLE or not note:
+                return (
+                    f"Nothing sent: give a section from {', '.join(WRITABLE)} and a note. "
+                    "If nothing needs fixing, finish."
+                )
+            # One fix per section per review: asking again just loops.
+            asked = self._fixes_asked.setdefault(task.id, set())
+            if section in asked:
+                return (
+                    f"{section} is already being fixed. Send another section back, "
+                    "or finish the review."
+                )
             if self._fix_rounds >= MAX_FIX_ROUNDS * len(SECTIONS):
-                return "enough rounds of fixes; leave the rest as notes"
+                return "Enough rounds of fixes; leave the rest as notes and finish."
+            asked.add(section)
             self._fix_rounds += 1
             fix = studio.graph.create(
                 f"Fix {section}: {note[:60]}", kind="section", section=section,
@@ -895,11 +1059,13 @@ class Foreman:
         )
         kind = task.kind
         if kind == "research":
+            # No ask_user here: facts are found by searching, not by asking the user.
             return [
                 Tool("web_search", "web_search(query): search the web and Wikipedia", web_search),
-                Tool("fetch_page", "fetch_page(id): read a result from web_search", fetch_page),
+                Tool("fetch_page", "fetch_page(id): read a result from web_search, by its id (like r3) or its url", fetch_page),
                 Tool("write_memory", "write_memory(title, body): save a note with its source", write_memory),
-                *common,
+                Tool("read_memory", "read_memory(query): notes the team has written", read_memory),
+                talk, finish,
             ]
         if kind == "review":
             return [

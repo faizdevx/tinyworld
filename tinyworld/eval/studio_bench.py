@@ -66,8 +66,8 @@ def measure(studio: Studio, seconds: float | None = None) -> dict:
     }
 
 
-async def build_once(premise: str, make_llm_and_search) -> dict:
-    store = Store()
+async def build_once(premise: str, make_llm_and_search, *, db: str | None = None) -> dict:
+    store = Store(db) if db else Store()
     world = store.create_world(premise, datetime(2000, 1, 1, 8))
     studio = Studio(store, world)
     llm, search = make_llm_and_search(store, premise)
@@ -75,7 +75,15 @@ async def build_once(premise: str, make_llm_and_search) -> dict:
     started = time.monotonic()
     foreman.submit(premise)
     await foreman.wait()
-    return measure(studio, time.monotonic() - started)
+    out = measure(studio, time.monotonic() - started)
+    out["world_id"] = world
+    out["tasks_detail"] = [
+        {"title": t.title, "status": t.status, "attempts": t.attempts,
+         "reason": t.blocked_reason[:160], "summary": t.summary[:120]}
+        for t in studio.graph.all()
+    ]
+    out["trial"] = studio.data.trial.get("summary", "")
+    return out
 
 
 async def probe(premise: str, make_llm_and_search, sections=("geography",)) -> dict:
@@ -137,6 +145,7 @@ async def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--probe", action="store_true",
                         help="one research task and one section instead of a whole build")
     parser.add_argument("--sections", nargs="*", default=["geography"])
+    parser.add_argument("--db", help="keep the built worlds in this SQLite file")
     options = parser.parse_args(argv)
     premises = options.premise or PREMISES
 
@@ -163,7 +172,7 @@ async def main(argv: list[str] | None = None) -> int:
             print(json.dumps(row, indent=1))
             rows.append(row)
             continue
-        row = await build_once(premise, make)
+        row = await build_once(premise, make, db=options.db)
         rows.append(row)
         print(json.dumps(row))
     print("summary", json.dumps(summarize(rows)))
