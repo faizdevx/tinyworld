@@ -16,6 +16,10 @@ the stated divergence from history.
 - unmotivated_change: a difference from real history that does not follow from \
 the divergence point.
 - gap: something the simulation needs that is missing or too vague to use.
+- real_person: a key figure who is a real, living public person (an executive, \
+politician, celebrity, official). Always blocking: they must be replaced by an \
+invented person in the same role. Historical figures who died long ago are \
+allowed only when the premise names them.
 
 For each finding name the section it belongs to (geography, politics, economy, \
 technology, culture, factions, figures, tensions). Mark it blocking only if the \

@@ -30,8 +30,10 @@ def chosen_provider() -> str | None:
     Anthropic first.
     """
     wanted = os.environ.get("TINYWORLD_PROVIDER", "").strip().lower()
-    if wanted in ("anthropic", "gemini", "openrouter"):
+    if wanted in ("anthropic", "gemini", "openrouter", "local"):
         return wanted
+    if os.environ.get("LOCAL_BASE_URL"):
+        return "local"
     if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
         return "anthropic"
     if os.environ.get("OPENROUTER_API_KEY"):
@@ -55,6 +57,10 @@ def make_client(provider: str | None) -> LLMClient | None:
             from tinyworld.llm.openrouter import OpenRouterClient
 
             return OpenRouterClient()
+        if provider == "local":
+            from tinyworld.llm.openai_compat import OpenAICompatClient
+
+            return OpenAICompatClient()
     except Exception:
         return None
     return None
@@ -70,8 +76,12 @@ def default_search(online: bool) -> SearchProvider:
         return NullSearch()
     try:
         from tinyworld.genesis.research import WikipediaSearch
+        from tinyworld.genesis.web import DuckDuckGoSearch, MultiSearch
 
-        return WikipediaSearch()
+        providers: dict = {"wikipedia": WikipediaSearch()}
+        if os.environ.get("TINYWORLD_WEB_SEARCH", "on").lower() not in ("off", "0", "false"):
+            providers["web"] = DuckDuckGoSearch()
+        return MultiSearch(providers)
     except Exception:
         return NullSearch()
 
@@ -127,7 +137,7 @@ class Hub:
         provider = chosen_provider()
         self.client = client if client is not None else make_client(provider)
         self.config = config or LLMConfig.load(
-            provider=provider if provider in ("gemini", "openrouter") else "anthropic"
+            provider=provider if provider in ("gemini", "openrouter", "local") else "anthropic"
         )
         self.offline_fallback = offline_fallback
         self.embedder = embedder or HashEmbedder()
@@ -223,7 +233,7 @@ class Hub:
             "matched": self.store.meta_get(world_id, "prepared_match") != "0",
         }
 
-    async def connect(self, provider: str, key: str) -> None:
+    async def connect(self, provider: str, key: str, base_url: str | None = None) -> None:
         """Use a model from now on. The key is kept in this process only.
 
         Nothing is written to disk. The key is tried with one tiny call first;
@@ -237,11 +247,18 @@ class Hub:
             "openrouter": "OPENROUTER_API_KEY",
             "gemini": "GEMINI_API_KEY",
             "anthropic": "ANTHROPIC_API_KEY",
+            "local": "LOCAL_API_KEY",
         }
         if provider not in names:
             raise ValueError(f"unknown provider: {provider}")
         key = key.strip()
-        if not key:
+        previous_url = os.environ.get("LOCAL_BASE_URL")
+        if provider == "local":
+            # A local server often takes no key; what it needs is an address.
+            if not (base_url or "").strip():
+                raise ValueError("the address of the model server is needed")
+            os.environ["LOCAL_BASE_URL"] = base_url.strip()
+        elif not key:
             raise ValueError("a key is needed")
         variable = names[provider]
         previous = os.environ.get(variable)
@@ -252,13 +269,18 @@ class Hub:
                 os.environ.pop(variable, None)
             else:
                 os.environ[variable] = previous
+            if provider == "local":
+                if previous_url is None:
+                    os.environ.pop("LOCAL_BASE_URL", None)
+                else:
+                    os.environ["LOCAL_BASE_URL"] = previous_url
 
         try:
             client = make_client(provider)
             if client is None:
                 raise ValueError(f"{provider} support is not installed")
             config = LLMConfig.load(
-                provider=provider if provider in ("gemini", "openrouter") else "anthropic"
+                provider=provider if provider in ("gemini", "openrouter", "local") else "anthropic"
             )
             tracer = Tracer(self.store, config)
             llm = StructuredLLM(client, config, None, max_repairs=0)

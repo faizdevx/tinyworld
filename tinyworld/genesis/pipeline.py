@@ -6,6 +6,7 @@ separate, deterministic step that turns the stored bible into a new branch.
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+import asyncio
 from datetime import datetime
 
 from pydantic import BaseModel
@@ -32,6 +33,22 @@ from tinyworld.llm.structured import StructuredLLM
 from tinyworld.llm.types import CallContext
 
 MAX_CRITIC_ROUNDS = 3
+
+# Sections that need nothing from each other are written together. Figures
+# place themselves in the geography and join the factions, and the tensions
+# are between figures, so those two wait for what they depend on.
+SECTION_WAVES = [
+    ["geography", "politics", "economy", "technology", "culture", "factions"],
+    ["figures"],
+    ["tensions"],
+]
+
+
+def in_waves(sections: list[str]) -> list[list[str]]:
+    """``sections`` grouped into the waves above, empty waves dropped."""
+    wanted = set(sections)
+    waves = [[s for s in wave if s in wanted] for wave in SECTION_WAVES]
+    return [wave for wave in waves if wave]
 
 PREMISE_SYSTEM = """You read a one-line premise for a simulated world and pin it down.
 
@@ -192,7 +209,7 @@ class GenesisPipeline:
         )
         bible = self.bibles.load(world_id)
         topic = f"{bible.premise.place}, {bible.premise.period}"
-        sources = await self.researcher.research(
+        sources = await self.researcher.investigate(
             world_id, reply.value.queries, topic, self._context(world_id, "research")
         )
         self.on_progress("research", f"{len(sources)} sources")
@@ -244,8 +261,8 @@ class GenesisPipeline:
         return reply.value
 
     async def stage_sections(self, world_id: str) -> None:
-        for section in SECTIONS:
-            await self.draft_section(world_id, section)
+        for wave in in_waves(list(SECTIONS)):
+            await asyncio.gather(*(self.draft_section(world_id, s) for s in wave))
 
     async def stage_critic(self, world_id: str) -> list[Finding]:
         """Review, redraft what is blocked, and repeat up to the round cap."""
@@ -263,9 +280,14 @@ class GenesisPipeline:
             ]
             if not blocked or round_number == MAX_CRITIC_ROUNDS:
                 break
-            for section in blocked:
-                await self.draft_section(
-                    world_id, section, [f for f in findings if f.section == section]
+            for wave in in_waves(blocked):
+                await asyncio.gather(
+                    *(
+                        self.draft_section(
+                            world_id, section, [f for f in findings if f.section == section]
+                        )
+                        for section in wave
+                    )
                 )
         return findings
 

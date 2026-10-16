@@ -25,6 +25,12 @@ export async function showHome(view) {
     location.hash = `#/world/${created.world_id}`;
   }, { class: "primary" });
 
+  const team = action("Build with the team", async () => {
+    const text = premise.value.trim() || EXAMPLE;
+    const started = await api("/studio", { method: "POST", body: { goal: text } });
+    location.hash = `#/studio/${started.world_id}`;
+  }, { class: "ghost" });
+
   premise.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) create.click();
   });
@@ -34,6 +40,7 @@ export async function showHome(view) {
       el("div", { class: "hero" },
         el("h1", {}, "What world?"),
         el("div", { class: "prompt" }, premise, create),
+        el("div", { class: "row", style: "margin-top:10px" }, team),
         el("div", { class: "row", style: "margin-top:10px" },
           action("Try a small town", async () => {
             const toy = await api("/worlds/toy", { method: "POST" });

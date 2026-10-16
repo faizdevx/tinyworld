@@ -62,7 +62,7 @@ def heading(text: str) -> None:
 async def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--premise", required=True)
-    parser.add_argument("--provider", choices=["gemini", "anthropic", "openrouter"], default=None)
+    parser.add_argument("--provider", choices=["gemini", "anthropic", "openrouter", "local"], default=None)
     parser.add_argument("--ticks", type=int, default=2)
     parser.add_argument("--skip", default="6mo", help="how far to skip, e.g. 6mo, 2y")
     parser.add_argument("--judge", type=int, default=3, help="people to judge (0 to skip)")

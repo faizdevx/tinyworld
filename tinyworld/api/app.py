@@ -35,7 +35,8 @@ class IntentsRequest(BaseModel):
 
 class ConnectRequest(BaseModel):
     provider: str
-    key: str
+    key: str = ""
+    base_url: str | None = None
 
 
 class WorldRequest(BaseModel):
@@ -134,7 +135,8 @@ def create_app(hub: Hub | None = None) -> FastAPI:
         """Use a model key from now on. Held in memory only, never written."""
         hub = the_hub()
         try:
-            await hub.connect(request.provider, request.key)
+            await hub.connect(request.provider, request.key, request.base_url)
+            app.state.studios.reset()
         except LLMFatal as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
         except ValueError as exc:
@@ -471,6 +473,12 @@ def create_app(hub: Hub | None = None) -> FastAPI:
         hub = the_hub()
         bible = hub.bibles.load(runner.session.world_id).model_dump(mode="json")
         return views.export_view(hub.store, branch_id, bible)
+
+    # -- the studio: a team that builds a world --------------------------
+
+    from tinyworld.api import studio_routes
+
+    studio_routes.install(app, the_hub)
 
     # -- live updates ---------------------------------------------------
 

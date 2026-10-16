@@ -265,9 +265,25 @@ def offline_llm(get_state: Callable[[], WorldState], seed: str = "offline") -> F
             return {"say": "I have no time for this.", "tone": "cold", "move": "refuse", "end": True}
         return {"say": rng.choice(SMALL_TALK), "tone": rng.choice(["warm", "neutral", "joking"])}
 
+    def mind(request: LLMRequest) -> dict:
+        """A resident with tools: look around first, then decide as the rules would."""
+        import dataclasses
+
+        from tinyworld.llm.types import CallContext
+
+        who, _, tick = (request.context.agent or "").rpartition(":")
+        if request.user.count("you used ") == 0:
+            return {"thought": "Let me see who is about.", "tool": "look_around", "args": {}}
+        plain = dataclasses.replace(
+            request,
+            context=CallContext(request.context.branch_id, int(tick) if tick.isdigit() else 0, who),
+        )
+        return {"thought": "", "tool": "decide", "args": act(plain)}
+
     return FakeLLM(
         {
             "chronicler": chronicle,
+            "agent.mind": mind,
             "agent.scene": scene,
             "tier2.summary": {"text": "People are getting by and keeping their heads down."},
             "god.parse": god,
