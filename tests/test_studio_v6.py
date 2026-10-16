@@ -1230,3 +1230,54 @@ def test_bookkeeping_problems_are_repaired_by_rule_and_listed():
     before = [f for f in critic.check(Bible.model_validate(draft)) if f.blocking]
     after = [f for f in critic.check(Bible.model_validate(fixed)) if f.blocking]
     assert len(after) < len(before)
+
+
+
+def test_a_writer_cannot_hand_its_content_to_the_user():
+    """Qwen 2.5 7B, writing politics, asked "What are the key political institutions?"."""
+    store, world, studio, foreman = build()
+    task = studio.graph.create("Write politics", kind="section", section="politics")
+    tools = {t.name: t for t in foreman._tools(task, studio.agent("sage"))}
+    reply = run(tools["ask_user"].run({"question": "What are the key political institutions?"}))
+    assert "your job" in reply and not studio.data.decisions
+
+
+
+def test_two_places_cut_off_together_are_joined_to_the_rest():
+    """Mars build: an island of two places linked to each other only."""
+    from tinyworld.genesis import critic
+    from tinyworld.genesis.bible import Bible
+    from tinyworld.studio.repair import repair
+
+    draft = {"geography": {"places": [
+        {"name": "Hab A", "connects_to": [{"to": "Hab B"}]}, {"name": "Hab B"},
+        {"name": "Mine C", "connects_to": [{"to": "Lab D"}]}, {"name": "Lab D"},
+    ]}}
+    fixed, notes = repair(draft)
+    assert any("connected Mine C to Hab A" in n for n in notes)
+    gaps = [f for f in critic.check(Bible.model_validate(fixed)) if "connected map" in f.text]
+    assert gaps == []
+
+
+
+def test_the_mars_draft_comes_out_clean_after_repair():
+    """The Mars build on Qwen 2.5 7B merged with 15 blocking problems, all bookkeeping."""
+    from tinyworld.genesis import critic
+    from tinyworld.genesis.bible import Bible
+    from tinyworld.studio.repair import repair
+
+    draft = {
+        "geography": {"places": [
+            {"name": "Mars Base Hub", "connects_to": [{"to": "Living Quarters"}]},
+            {"name": "Living Quarters"}, {"name": "Research Lab", "connects_to": [{"to": "Medical Center"}]},
+            {"name": "Medical Center"}, {"name": "resources: []}}}, "},
+        ]},
+        "economy": {"resources": [{"name": "water"}], "stocks": [{"holder": "Power Plant", "resource": "water", "quantity": 3}]},
+        "figures": {"figures": [{"name": "Eva Marlow", "age": 40, "home": "Security Compound",
+                                 "location": "Training Grounds", "summary": "s", "goals": ["find new sites"],
+                                 "possessions": [{"holder": "Eva Marlow", "resource": "rock sample", "quantity": 1}]}]},
+    }
+    fixed, notes = repair(draft)
+    assert [f for f in critic.check(Bible.model_validate(fixed)) if f.blocking and f.section in ("geography", "economy")] == []
+    assert not any("}" in p["name"] for p in fixed["geography"]["places"])
+    assert any("not a name" in n for n in notes)

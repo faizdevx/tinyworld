@@ -127,6 +127,50 @@ from AgentCraft's prompts: a numbered procedure for each job, "when done, end
 your turn", answered questions kept with the task so a retry does not ask again,
 and a hand-over that continues from saved work instead of starting over.
 
+### Three full builds on a local open-weight model
+
+Then the whole studio ran end to end on a laptop: **Qwen2.5-7B-Instruct**
+(Q4_K_M) under llama.cpp's `llama-server` on an RTX 3050 with 4 GB
+(`-ngl 16 -c 12288 -np 1 --cache-type-k q8_0 --cache-type-v q8_0 -fa on --jinja`,
+about 7 tokens a second), `LOCAL_CONCURRENCY=1`, auto mode, live web search.
+Every build ran from the first plan to the merge with no person answering.
+
+| Premise | Result | Calls | Time | Blocking problems at merge | What the world had |
+|---|---|---|---|---|---|
+| Lucknow, 1857 | Merged; trial run passed | 140 | 52 min | 13 | 7 places (some outside Lucknow), 2 people |
+| Gandhi's India, 1930 (first try) | Stopped by hand | - | - | 23 | A writer and the reviewer passed the same section back and forth |
+| Gandhi's India, 1930 (second try) | Merged; trial run passed, 4 of 4 people acted | 112 | 54 min | 9 | 8 coherent places; Hindu Nationalists, Communist Party, Muslim League; 4 people |
+| A Mars colony | Merged; trial run passed | 128 | 48 min | 15 | 3 people; one place named `resources: []}}}, ` |
+
+Every one of the 15 Mars problems was bookkeeping (a home that is not a place,
+a resource nobody defined, a stock at an unknown holder, two groups of places
+with no road between them), and a second repair cleared all of them. What each
+build exposed, and the fix now in the code:
+
+| Seen live | Fix |
+|---|---|
+| A 7B model returns sections in near-miss shapes (`places` as a dict, `name` as `title`) | The exact shape of each section in the brief; near-miss field names normalised; a section below a minimum (premise without a date or a place) refused |
+| Long lists cut off mid-reply | Append mode: a writer can add to a list over several calls; a nudge when a list is short of its target |
+| The lead planned too little or in the wrong order | The foreman validates the plan and completes it: a task per missing section, review after every section, digest after review |
+| Writers asked the user "which section next?" or "is this OK?" | Process and confirmation questions refused; a writer may only ask with options; three questions per build |
+| A review sent the same section back again and again | One fix request per section per review; at most two change rounds |
+| Bookkeeping problems that a rewrite made worse | `repair()` fixes them by rule, openly, and now runs again after every fix round; places cut off together are joined to the rest; a name sharing a distinctive word with a place is that place |
+| JSON leaking into a name | A place whose name holds `{`, `}`, `[` or `]` is dropped |
+| A problem the reviewer missed | A CI-style round: the checks' findings go back to the writer once as a "Fix" task |
+
+Still open: the casts are small (2 to 4 people where the brief asks for more),
+and Lucknow placed some sites outside the city. No hosted model has run a full
+build yet; the free OpenRouter quota ran out during the probes.
+
+<p>
+<img src="images/live-lucknow-tasks.jpg" width="49%" alt="The Lucknow build's tasks on Qwen 2.5 7B">
+<img src="images/live-lucknow-notes.jpg" width="49%" alt="The team's shared notes from that build">
+</p>
+<p>
+<img src="images/live-lucknow-town.jpg" width="49%" alt="The studio scene after the merge">
+<img src="images/live-lucknow-world.jpg" width="49%" alt="The merged Lucknow world, running">
+</p>
+
 ## v6.1: real teams on real models
 
 Goal: the studio works with a hosted model and with an open-weight model, and

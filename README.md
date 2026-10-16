@@ -39,6 +39,13 @@ nothing until you press **Merge**. Then the residents live in it.
 <img src="docs/images/v6-studio-merged.jpg" width="49%" alt="Merged, with the audit log of what the team did">
 </p>
 
+A real build, on Qwen 2.5 7B running locally (Lucknow, 1857):
+
+<p>
+<img src="docs/images/live-lucknow-tasks.jpg" width="49%" alt="The live Lucknow build's tasks">
+<img src="docs/images/live-lucknow-world.jpg" width="49%" alt="The merged Lucknow world, running">
+</p>
+
 - **A cast, each with a job.** Marlow leads and plans. Iris and Ash research.
   Juno draws the map, Sage writes history and politics, Otto the economy and
   technology, Wren the people and factions. Vera reviews and sends sections
@@ -116,7 +123,7 @@ only been shown on scripted stand-ins, and what is not built.
 | Days that run on routine | **Works with scripted agents** | Offline Berlin demo, 39 simulated hours, 10 people: model calls per simulated day 1,140 down to 460 to 530. |
 | Conversations and promises | **Works with scripted agents** | 22 of 22 promises kept over four offline runs (1 of 10 before the fix). This shows the mechanism, not that a model keeps promises. |
 | Knowledge and projects | **Works, covered by tests**, never seen live | A person can start a project, a discovery needs its foundations, finishing teaches the workers. |
-| Open-weight models (any OpenAI-compatible server: vLLM, Ollama, llama.cpp) | **Built (v4), tested against a simulated server only** | Request shape, constraint step-down, reasoning-block stripping, adaptive concurrency and error handling are tested. It has **not** been run against a real vLLM or Ollama server. |
+| Open-weight models (any OpenAI-compatible server: vLLM, Ollama, llama.cpp) | **Runs live: three full studio builds** | Qwen2.5-7B-Instruct Q4 on llama.cpp, a 4 GB laptop GPU: Lucknow, Gandhi's India and a Mars colony each went from plan to merge with no person, 112 to 140 calls and about 50 minutes each. Details in [docs/V6_PLAN.md](docs/V6_PLAN.md#three-full-builds-on-a-local-open-weight-model). Not yet run on vLLM or Ollama. |
 | Research agent with web search | **Built (v4)**, web search works live | DuckDuckGo returned results and page text with no key. The read, find gaps, search again loop is tested with a scripted model, not yet run live end to end. |
 | Genesis in parallel waves | **Built (v4)**, measured on a simulated delay | 13 calls either way; with 0.25 s per call, 3.40 s sequential against 2.09 s in waves. Not timed on a real model. |
 | Real people in a bible | **Guarded by the reviewer (v4)**, not seen live | The reviewer prompt and the figures brief now forbid living public figures, and a `real_person` finding blocks and triggers a redraft. Tested with a scripted reviewer. |
