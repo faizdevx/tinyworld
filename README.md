@@ -433,7 +433,20 @@ python -m tinyworld.api.app
 # vLLM
 vllm serve Qwen/Qwen2.5-14B-Instruct --port 8000
 export LOCAL_BASE_URL=http://localhost:8000/v1 LOCAL_MODEL_STANDARD=Qwen/Qwen2.5-14B-Instruct
+
+# llama.cpp on a small GPU: what the studio was tested with (RTX 3050, 4 GB)
+llama-server -m Qwen2.5-7B-Instruct-Q4_K_M.gguf -ngl 16 -c 12288 -np 1 \
+  --cache-type-k q8_0 --cache-type-v q8_0 -fa on --jinja --port 8081
+export LOCAL_BASE_URL=http://127.0.0.1:8081/v1 LOCAL_CONCURRENCY=1 LOCAL_MAX_CONCURRENCY=1
+python -m tinyworld.eval.studio_bench --provider local --probe   # one research task and one section
+python -m tinyworld.eval.studio_bench --provider local --db build.sqlite   # a whole build
 ```
+
+On a 4 GB card, keep the context small and quantise the KV cache: with the
+default cache the model spilled out of VRAM and ran at 1.2 tokens per second;
+with the settings above it ran at about 7. One request at a time
+(`LOCAL_CONCURRENCY=1`) fits a single slot. A whole build on a 7B model takes
+on the order of an hour this way.
 
 `TINYWORLD_PROVIDER=local` forces it. `LOCAL_API_KEY` is optional. The page's
 "Add a model key" box also takes a server address. Concurrency starts at

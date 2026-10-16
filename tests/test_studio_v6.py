@@ -1077,3 +1077,34 @@ def test_an_empty_or_thin_section_is_not_saved():
         reply = run(tools["write_section"].run({"section": "geography", "content": content}))
         assert "not saved" in reply and "at least two places" in reply
     assert "geography" not in studio.data.draft
+
+
+def test_asking_leave_to_carry_on_is_refused_but_a_real_question_goes_through():
+    """Qwen 2.5 7B asked "Do you want to proceed with the research task...?"."""
+    store, world, studio, foreman = build()
+    plan = studio.graph.create("Plan the world", kind="plan")
+    tools = {t.name: t for t in foreman._tools(plan, studio.agent("marlow"))}
+    reply = run(tools["ask_user"].run({"question": "Do you want to proceed with the research task?"}))
+    assert "Do not ask the user for permission" in reply
+    assert not studio.data.decisions
+
+
+def test_a_long_list_can_be_written_a_few_at_a_time():
+    """Qwen 2.5 7B wrote two people in one reply. Append lets the cast grow."""
+    store, world, studio, foreman = build()
+    task = studio.graph.create("Write figures", kind="section", section="figures")
+    studio.data.draft["geography"] = {"places": [{"name": "Chowk"}, {"name": "Aminabad"}]}
+    tools = {t.name: t for t in foreman._tools(task, studio.agent("wren"))}
+
+    def person(name):
+        return {"name": name, "age": 30, "home": "Chowk", "summary": f"{name} lives here", "goals": ["get by"]}
+
+    first = run(tools["write_section"].run({"section": "figures", "content": {"figures": [person("A"), person("B")]}}))
+    assert "has 2 figures so far" in first and "mode: append" in first
+    more = run(tools["write_section"].run({"section": "figures", "mode": "append",
+                                           "content": {"figures": [person("B"), person("C"), person("D")]}}))
+    assert "added 2 item(s)" in more
+    names = [f["name"] for f in studio.data.draft["figures"]["figures"]]
+    assert names == ["A", "B", "C", "D"]
+    text = foreman._task_text(task)
+    assert "places: Chowk, Aminabad" in text and "Aim for about 8 figures" in text

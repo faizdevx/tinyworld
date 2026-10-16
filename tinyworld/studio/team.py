@@ -14,6 +14,7 @@ gate); the agents own the thinking. A viewer is only a window onto
 import asyncio
 import hashlib
 import json
+import re
 from datetime import datetime
 
 from pydantic import ValidationError
@@ -109,6 +110,12 @@ PROCEDURE = {
 }
 # Room for one reply. A section goes out whole inside the reply, so it needs room.
 STEP_TOKENS = {"section": 7000, "digest": 3000, "plan": 5000, "review": 2000, "research": 1500}
+# "Shall I go on?" is not a question for the user.
+CONFIRMATION = re.compile(
+    r"^\s*(do you want (me )?to|shall i|should i|can i|may i|is it ok(ay)? (if|to)|would you like me to)"
+    r"\b.*\b(proceed|continue|start|begin|go ahead|carry on|move on|do (this|that|it))\b",
+    re.IGNORECASE,
+)
 # Two searches are "the same" when most of their words are.
 NEAR_DUPLICATE = 0.6
 MAX_FIX_ROUNDS = 2
@@ -602,6 +609,15 @@ class Foreman:
                 f"\nThe exact JSON shape of {task.section} (use these field names): "
                 + shapes.shape(ARTIFACTS[task.section])
             )
+        names = self._draft_names()
+        if task.section in ("figures", "factions", "tensions", "economy", "politics") and names:
+            extra += "\nUse these names exactly as written where you refer to them:\n" + names
+        if task.section in shapes.TARGET:
+            key, want = shapes.TARGET[task.section]
+            extra += (
+                f"\nAim for about {want} {key}. If one reply cannot hold them all, write "
+                "three, then add more with mode \"append\"."
+            )
         if task.kind == "research":
             extra = "\nFind facts about everyday life, institutions, economy and technology."
         procedure = PROCEDURE.get(task.kind)
@@ -628,6 +644,21 @@ class Foreman:
                 f"- {d.question} -> {d.answer}" for d in asked
             )
         return f"{head}\nGoal: {goal}\n{body}{extra}".strip()
+
+    def _draft_names(self) -> str:
+        """Places, factions and people already in the draft, for cross-references."""
+        draft = self.studio.data.draft
+        lines = []
+        places = [p.get("name") for p in (draft.get("geography") or {}).get("places", [])]
+        if places:
+            lines.append("- places: " + ", ".join(p for p in places if p))
+        factions = [f.get("name") for f in (draft.get("factions") or {}).get("factions", [])]
+        if factions:
+            lines.append("- factions: " + ", ".join(f for f in factions if f))
+        people = [f.get("name") for f in (draft.get("figures") or {}).get("figures", [])]
+        if people:
+            lines.append("- people: " + ", ".join(p for p in people if p))
+        return "\n".join(lines)
 
     def _world_note(self) -> str:
         draft = self.studio.data.draft
@@ -914,6 +945,13 @@ class Foreman:
                     f"{section} was not saved. Fix: {problems}. The shape is: "
                     + shapes.shape(model)
                 )
+            if str(args.get("mode", "")).lower() == "append" and section in studio.data.draft:
+                merged, added = shapes.append(studio.data.draft[section], valid.model_dump(mode="json"))
+                try:
+                    valid = model.model_validate(merged)
+                except ValidationError as exc:
+                    return f"could not add to {section}: {str(exc)[:300]}"
+                notes.append(f"added {added} item(s) to the existing {section}")
             thin = shapes.too_thin(section, valid.model_dump(mode="json"))
             if thin:
                 return (
@@ -927,13 +965,19 @@ class Foreman:
                 )
             studio.emit("draft.upsert", section=section)
             studio.save()
+            short = shapes.short_of_target(section, valid.model_dump(mode="json"))
+            done = (
+                f" {short}" if short and section == task.section
+                else " Your task is done: call finish now." if section == task.section
+                else ""
+            )
             if notes:
                 return (
                     f"{section} saved to the draft, after these corrections: "
                     + "; ".join(notes[:8])
-                    + ". Use the real field names next time."
+                    + ". Use the real field names next time." + done
                 )
-            return f"{section} saved to the draft"
+            return f"{section} saved to the draft." + done
 
         async def plan_tasks(args: dict) -> str:
             # One plan per planning task: a second call would put everything up twice.
@@ -983,6 +1027,12 @@ class Foreman:
             question = str(args.get("question", "")).strip()
             if not question:
                 return "give a question"
+            if CONFIRMATION.search(question):
+                # Small models ask leave to carry on. The user should not see that.
+                return (
+                    "Do not ask the user for permission to carry on with your own task: "
+                    "decide and continue. Ask only about a choice that is genuinely theirs."
+                )
             options = [str(o) for o in (args.get("options") or [])][:4]
             decision = Decision(
                 id="", agent_id=agent_id, kind="question", question=question,
@@ -1079,8 +1129,9 @@ class Foreman:
             Tool("read_draft", "read_draft(section): a section of the draft", read_draft),
             live_tool,
             Tool("write_section",
-                 "write_section(section, content): save a section; content is a JSON "
-                 "object that must match the section's shape", write_section),
+                 "write_section(section, content, mode?): save a section; content is a JSON "
+                 "object that must match the section's shape; mode \"append\" adds items "
+                 "to what is already written", write_section),
         ]
         if kind == "plan":
             return [

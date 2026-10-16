@@ -153,3 +153,55 @@ def too_thin(section: str, content: dict) -> str | None:
     if len(items) < least:
         return f"{section} needs {words} in `{key}`"
     return None
+
+
+# How many items a finished list should have. Below this the writer is asked
+# to add more, a few at a time, rather than the section being refused.
+TARGET = {"geography": ("places", 8), "figures": ("figures", 8), "factions": ("factions", 3)}
+
+
+def append(existing: dict | None, new: dict) -> tuple[dict, int]:
+    """``new`` merged into ``existing``: lists gain items not already there (by name).
+
+    Small models run out of room writing eight people at once. In append mode
+    they write two or three per call and the section grows.
+    """
+    if not existing:
+        return new, sum(len(v) for v in new.values() if isinstance(v, list))
+    merged = dict(existing)
+    added = 0
+    for key, value in new.items():
+        if isinstance(value, list) and isinstance(merged.get(key), list):
+            have = {
+                (item.get("name") or item.get("text") or json_key(item)) if isinstance(item, dict) else item
+                for item in merged[key]
+            }
+            for item in value:
+                tag = (item.get("name") or item.get("text") or json_key(item)) if isinstance(item, dict) else item
+                if tag not in have:
+                    merged[key] = merged[key] + [item]
+                    have.add(tag)
+                    added += 1
+        elif value not in (None, "", [], {}):
+            merged[key] = value
+    return merged, added
+
+
+def json_key(item: dict) -> str:
+    import json
+
+    return json.dumps(item, sort_keys=True)
+
+
+def short_of_target(section: str, content: dict) -> str | None:
+    rule = TARGET.get(section)
+    if rule is None:
+        return None
+    key, want = rule
+    have = len(content.get(key) or [])
+    if have < want:
+        return (
+            f"{section} has {have} {key} so far; a world needs about {want}. Add "
+            f"{min(3, want - have)} more with write_section(section, content, mode: append)."
+        )
+    return None
