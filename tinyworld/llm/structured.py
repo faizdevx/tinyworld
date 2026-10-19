@@ -82,7 +82,7 @@ class StructuredLLM:
         reply is retried with the error attached, up to ``max_repairs`` times.
         After that ``fallback`` is returned with ``ok=False``.
         """
-        route = self.config.route(role)
+        route = self.config.route(role, context.agent)
         json_schema = _schema_of(schema)
         prompt = user
         error = ""

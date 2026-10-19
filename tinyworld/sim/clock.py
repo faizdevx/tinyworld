@@ -76,22 +76,28 @@ async def advance_world(sim: Simulation, minutes: int, tick_seq: int) -> list[Ev
 
 
 async def settle_intents(
-    sim: Simulation, intents: list[Intent], tick_seq: int, causes: dict[str, list[int]] | None = None
+    sim: Simulation, intents: list[Intent], tick_seq: int, causes: dict[str, list[int]] | None = None,
+    *, remember: bool = True, scenes: bool = True,
 ) -> tuple[StepResult, list[Event]]:
-    """Resolve and commit intents, then run what follows from them: scenes, promotion, memory."""
+    """Resolve and commit intents, then run what follows from them: scenes, promotion, memory.
+
+    With ``remember=False`` the memories are left for the caller to write in one batch (one
+    importance call per witness for a whole window, not one per commit).
+    """
     session = sim.session
     step = await apply_intents(
         session, sim.gm, intents, CallContext(session.branch_id, tick_seq), causes=causes
     )
     observations = list(step.observations)
     scene_events: list[Event] = []
-    if sim.scenes is not None:
+    if sim.scenes is not None and scenes:
         for speaker, listener, line in openings(session.state, step.events, sim.scenes.max_scenes):
             scene = await sim.scenes.run(tick_seq, speaker, listener, line)
             scene_events += scene.events
             observations += scene.observations
     await sim.promote(sim.tiers.involved(session.state, step.events + scene_events))
-    await sim.remember(observations, tick_seq)
+    if remember:
+        await sim.remember(observations, tick_seq)
     step.observations = observations
     return step, scene_events
 
@@ -113,6 +119,7 @@ class AsyncSimulation:
         *,
         window: int = 2,
         max_redecide: int = 2,
+        batch_memory: bool = True,
     ) -> None:
         self.sim = sim
         self.session = sim.session
@@ -131,6 +138,10 @@ class AsyncSimulation:
         self._talked: set[str] = set()
         # People something reached while they were walking: they decide, not walk on.
         self._alerted: set[str] = set()
+        self.batch_memory = batch_memory
+        self._pending: list = []
+        self.paused = False
+        self.slowed = 0
         self.redecided = 0
         self.windows = 0
         self.committed = 0
@@ -196,6 +207,9 @@ class AsyncSimulation:
         sim = self.sim
         entity = state.entities[person]
         tier = tier_of(entity)
+        if self._level() == "pause":
+            # The money is spent: nobody is asked anything more, they just stand and wait.
+            return Decided(Acted(Intent(agent=person, verb=Verb.WAIT, args={"minutes": 60}, text="waits"), "", False, None), "idle")
         from tinyworld.world import walking
 
         dest = walking.route_of(entity)
@@ -214,7 +228,7 @@ class AsyncSimulation:
             if intent is not None:
                 return Decided(Acted(intent, "routine", True, None), "routine")
             mode = "react"
-        agent = sim.agent if tier == 0 else sim.agent_tier1
+        agent = sim.agent if tier == 0 and self._level() not in ("demote", "pause") else sim.agent_tier1
         if agent is None:
             return Decided(Acted(Intent(agent=person, verb=Verb.WAIT, text="idle"), "", False, None), "idle")
         hint = daily.hint(state, entity, block)
@@ -228,6 +242,22 @@ class AsyncSimulation:
         )
         return Decided(acted, mode)
 
+    def _level(self) -> str:
+        budget = self.sim.budget
+        if budget is None:
+            return "ok"
+        if hasattr(budget, "tick_day"):
+            budget.tick_day(self.session.state.sim_time)
+        return budget.level()
+
+    def _stretch(self, minutes: int) -> int:
+        """Under budget pressure everyone's pauses get longer: the town slows rather than overspends."""
+        level = self._level()
+        if level == "ok":
+            return minutes
+        self.slowed += 1
+        return minutes * (2 if level == "lengthen" else 3)
+
     def _duration(self, outcome, intent: Intent) -> int:
         minutes = getattr(outcome, "minutes", 0) or 0
         if minutes <= 0:
@@ -235,7 +265,7 @@ class AsyncSimulation:
             minutes = arg if isinstance(arg, int) and not isinstance(arg, bool) and arg > 0 else DEFAULT_MINUTES.get(intent.verb, 10)
         if intent.verb is Verb.MOVE:
             return max(1, int(minutes))
-        return max(MIN_BEAT, int(minutes))
+        return self._stretch(max(MIN_BEAT, int(minutes)))
 
     # -- the single writer --------------------------------------------------
 
@@ -271,9 +301,14 @@ class AsyncSimulation:
         causes = {person: decided.acted.causes}
         session.store.journal_add(
             session.branch_id, session.state.seq, "async_intents",
-            {"intents": [intent.model_dump(mode="json")], "tick_seq": tick_seq, "causes": causes},
+            {"intents": [intent.model_dump(mode="json")], "tick_seq": tick_seq, "causes": causes,
+             "scenes": self._level() != "pause"},
         )
-        step, scene_events = await settle_intents(self.sim, [intent], tick_seq, causes)
+        step, scene_events = await settle_intents(
+            self.sim, [intent], tick_seq, causes, remember=not self.batch_memory, scenes=self._level() != "pause"
+        )
+        if self.batch_memory:
+            self._pending.extend(step.observations)
         self.committed += 1
         state = session.state
         outcome = step.outcomes[0] if step.outcomes else None
@@ -342,6 +377,9 @@ class AsyncSimulation:
         """Move to the next waking and let everyone due in the window act."""
         session = self.session
         state = session.state
+        if self._level() == "pause":
+            self.paused = True
+            return []
         self._ensure(state)
         if not self.wake:
             return []
@@ -373,20 +411,39 @@ class AsyncSimulation:
         order = self.entropy.order("wake.order", due)
         session.store.journal_add(session.branch_id, state.seq, "window", {"t": state.sim_time.isoformat(), "order": order})
         tick_seq = state.seq
+        # Everyone in the window is deciding from now until their own decision is committed.
+        self._inflight |= set(order)
+        self._poked -= set(order)
+        self._talked -= set(order)
         plans = {p: self._plan_one(state, p) for p in order}
         tasks = [
             asyncio.create_task(self._decide_and_commit(state, p, plans[p], tick_seq)) for p in order
         ]
         before = state.seq
         await asyncio.gather(*tasks)
+        await self._flush_memory(tick_seq)
         # Memory upkeep for the people who just acted; nothing here changes events.
         await self._reflect(order, tick_seq)
         return events + session.store.events(session.branch_id, after=before)
 
+    async def _flush_memory(self, tick_seq: int) -> None:
+        """Witnesses remember everything the window held, in one go; the weighty wake those who sleep."""
+        if not self._pending:
+            return
+        observations, self._pending = self._pending, []
+        session = self.session
+        dropped = self._level() == "pause"
+        session.store.journal_add(session.branch_id, session.state.seq, "window_end", {"tick_seq": tick_seq, "drop": dropped})
+        if dropped:
+            return  # nothing more is paid for once the money is gone
+        await self.sim.remember(observations, tick_seq)
+        now = session.state.sim_time
+        for who in sorted({o.observer for o in observations}):
+            if who in self.wake and who not in self._inflight and self._weighty(who):
+                self.interrupt(who, now)
+
     async def _decide_and_commit(self, state, person, plan, tick_seq):
         mode, block = plan
-        self._inflight.add(person)
-        self._poked.discard(person)
         decided = await self._decide(state, person, mode, block, tick_seq)
         await self._commit(person, decided, state, tick_seq)
 
@@ -398,7 +455,7 @@ class AsyncSimulation:
         state = self.session.state
         for person in people:
             entity = state.entities.get(person)
-            if entity is None or persona_of(entity) is None:
+            if entity is None or persona_of(entity) is None or self._level() == "pause":
                 continue
             if sim.reflector.due(branch, person):
                 await sim.reflector.reflect(
@@ -413,10 +470,12 @@ class AsyncSimulation:
     async def run_until(self, end: datetime, max_windows: int = 100000) -> int:
         """Run until the world's clock reaches ``end``. Returns the windows it took."""
         n = 0
-        while self.session.state.sim_time < end and n < max_windows:
+        while self.session.state.sim_time < end and n < max_windows and not self.paused:
             before = (self.session.state.sim_time, self.session.state.seq)
             await self.step(until=end)
             n += 1
+            if self.paused:
+                break
             if (self.session.state.sim_time, self.session.state.seq) == before:
                 # Nothing moved: jump the clock so a stalled world still ends.
                 state = self.session.state

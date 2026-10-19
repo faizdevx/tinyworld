@@ -83,6 +83,8 @@ class Town:
         creators=None,
         desk=None,
         drives_on: bool = False,
+        paper_model: bool = False,
+        noise: bool = False,
     ) -> None:
         # With a model, the petition is written by it from the person's situation.
         self.write_petitions = write_petitions and sim.llm is not None
@@ -98,6 +100,9 @@ class Town:
         self.creators = creators
         self.desk = desk  # a studio PetitionDesk, if a person sits at the podium
         self.drives_on = drives_on
+        self.paper_model = paper_model and sim.llm is not None
+        if noise:
+            sim.noise = entropy
         self._drive_seq = self.session.state.seq
         self._pilgrims: dict[str, tuple[str, dict]] = {}
         self.last_refused = ""
@@ -168,7 +173,7 @@ class Town:
         if self.creators is not None:
             events += await self._grow()
         if self.paper:
-            events += self._newspaper()
+            events += await self._newspaper()
         return events
 
     # -- the map grows -----------------------------------------------------
@@ -375,7 +380,7 @@ class Town:
 
     # -- the paper -------------------------------------------------------
 
-    def _newspaper(self) -> list[Event]:
+    async def _newspaper(self) -> list[Event]:
         """When a day has ended, print its edition."""
         state = self.session.state
         today = state.sim_time.date()
@@ -386,8 +391,21 @@ class Town:
             return []
         day, self._paper_day = self._paper_day, today
         events = self.session.store.events(self.session.branch_id)
-        edition = newspaper.write(events, day, state)
+        if self.paper_model:
+            edition = await newspaper.write_with_model(
+                self.sim.llm, events, day, state,
+                CallContext(self.session.branch_id, state.seq, "narrator"),
+            )
+        else:
+            edition = newspaper.write(events, day, state)
         self.editions[day.isoformat()] = edition
         newspaper.save(self.session.store, self.session.world_id, edition)
         draft = newspaper.publish_draft(state, edition)
-        return self.commit([draft]) if draft is not None else []
+        if draft is None:
+            return []
+        # The paper is left where people gather; those there pick it up, read it, and believe some of it.
+        place = draft.location
+        readers = [p.id for p in state.people_at(place)] if place else []
+        notes = newspaper.reading_notes(state, edition, readers)
+        beliefs = [(r, *b) for r in readers for b in newspaper.believed(edition)]
+        return self.commit([draft], notes, beliefs)

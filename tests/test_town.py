@@ -206,3 +206,64 @@ def test_a_town_run_replays_exactly():
     report = run(replay(session.store, session.branch_id, LLMConfig()))
     assert report.identical, report.first_difference
     assert report.replayed_events == report.recorded_events > 30
+
+
+def test_residents_read_the_paper_and_believe_it():
+    town, session = make(chaos=0.0, petitioning=False)
+    run(town.run(30, 60))
+    day = sorted(town.editions)[0]
+    item = session.state.entities[newspaper.item_id(day)]
+    readers = [p for p in session.state.people_at(item.location)]
+    assert readers
+    heard = [m for p in readers for m in town.sim.memory.list(session.branch_id, p.id) if "I read the paper" in m.text]
+    assert heard
+    beliefs = town.sim.beliefs.current(session.branch_id, readers[0].id)
+    assert any(b.subject == "town" and b.predicate == "news" for b in beliefs)
+
+
+def test_a_model_narrator_is_used_and_a_made_up_event_sends_it_back_to_the_script():
+    from tinyworld.llm.fake import FakeLLM
+    from tinyworld.sim import newspaper as np_
+
+    town, session = make(chaos=0.0, petitioning=False)
+    run(town.run(26, 60))
+    events = session.store.events(session.branch_id)
+    day = sorted(town.editions)[0]
+    from datetime import date as d
+
+    todays = np_.day_events(events, d.fromisoformat(day))
+    cited = todays[0].seq
+    cfg = LLMConfig()
+    good = StructuredLLM(FakeLLM({"narrator.paper": {"day": day, "headline": "A day in town", "stories": [
+        {"headline": "Something happened", "body": "x", "events": [cited]}], "rumours": []}}), cfg, Tracer(session.store, cfg))
+    from tinyworld.llm.types import CallContext
+
+    e = run(np_.write_with_model(good, events, d.fromisoformat(day), session.state, CallContext(session.branch_id, 0)))
+    assert e.headline == "A day in town" and np_.check(e, events) == []
+    bad = StructuredLLM(FakeLLM({"narrator.paper": {"day": day, "headline": "Invented", "stories": [
+        {"headline": "Made up", "body": "x", "events": [999999]}], "rumours": []}}), cfg, Tracer(session.store, cfg))
+    e2 = run(np_.write_with_model(bad, events, d.fromisoformat(day), session.state, CallContext(session.branch_id, 1)))
+    assert e2.headline != "Invented" and np_.check(e2, events) == []
+
+
+def test_far_off_senses_are_unreliable_and_a_replay_hears_the_same_slips():
+    from tinyworld.gm.perception import Observation, distort
+    from tinyworld.core.entropy import Fixed
+    from datetime import datetime
+
+    o = Observation(observer=toy.ANNA, event_seq=1, sim_time=datetime(2000, 1, 1), mode="auditory", confidence=0.5,
+                    text="Otto says he will take the grain on Friday", actor=toy.OTTO)
+    slipped = distort(o, Fixed([0.0, 0.0, 0.0]))
+    assert slipped.text != o.text and slipped.confidence < o.confidence
+    assert distort(o, Fixed([0.99])).text == o.text  # no slip this time
+    near = o.model_copy(update={"confidence": 1.0})
+    assert distort(near, Fixed([0.0])).text == near.text  # close and certain: exact
+
+    town, session = make(chaos=0.0, petitioning=False, noise=True)
+    run(town.run(14, 60))
+    draws = [r for r in session.store.journal(session.branch_id) if r["op"] == "draw" and '"noise.' in r["args_json"]]
+    report = run(replay(session.store, session.branch_id, LLMConfig()))
+    assert report.identical, report.first_difference
+    if draws:
+        mem_live = sorted(m.text for p in session.state.people() for m in town.sim.memory.list(session.branch_id, p.id))
+        assert mem_live

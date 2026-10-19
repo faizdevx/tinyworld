@@ -23,8 +23,34 @@ _COMMITMENT_ID = re.compile(r"^commitment:[a-z0-9][a-z0-9_]*$")
 EntityKind = Literal["person", "place", "item", "org", "faction", "resource"]
 
 
+def _copy_value(value):
+    """A deep copy of JSON-like data and nested models, much faster than ``copy.deepcopy``."""
+    kind = type(value)
+    if kind is dict:
+        return {k: _copy_value(v) for k, v in value.items()}
+    if kind is list:
+        return [_copy_value(v) for v in value]
+    if kind in (str, int, float, bool, type(None)):
+        return value
+    if isinstance(value, BaseModel):
+        return value.__deepcopy__()
+    if kind is tuple:
+        return tuple(_copy_value(v) for v in value)
+    if kind is set:
+        return {_copy_value(v) for v in value}
+    import copy
+
+    return copy.deepcopy(value)
+
+
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    def __deepcopy__(self, memo=None):
+        # World state is copied on every commit; pydantic's generic deep copy was the dearest thing
+        # the simulation did. Fields here are JSON-like, so copy them directly.
+        cls = type(self)
+        return cls.model_construct(**{name: _copy_value(getattr(self, name)) for name in cls.model_fields})
 
 
 class Entity(Model):
@@ -161,6 +187,13 @@ class Region(Model):
     def has(self, x: int, y: int) -> bool:
         return self.x0 <= x <= self.x1 and self.y0 <= y <= self.y1
 
+    # A region is never changed once made (a new one replaces it), so copies of a world can share it.
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo=None):
+        return self
+
 
 class Chunk(Model):
     """32 by 32 tiles: one character of terrain each, and the places they belong to."""
@@ -174,6 +207,10 @@ class Chunk(Model):
         if len(self.terrain) != CHUNK * CHUNK or any(c not in TERRAIN for c in set(self.terrain)):
             raise ValueError("a chunk is 32 by 32 tiles of known terrain")
         return self
+
+    def __deepcopy__(self, memo=None):
+        # The terrain is one immutable string and the regions are shared: copying a world is cheap.
+        return Chunk.model_construct(terrain=self.terrain, regions=list(self.regions))
 
 
 class WorldState(Model):

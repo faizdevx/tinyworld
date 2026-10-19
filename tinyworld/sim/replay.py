@@ -90,9 +90,15 @@ async def replay(
     llm = StructuredLLM(ReplayLLM(store, source_branch), config, Tracer(store, config))
     budget = Budget(store, session.branch_id)
     sim = Simulation(session, llm, budget=budget, **(sim_options or {}))
+    if any(r["op"] == "draw" and '"noise.' in r["args_json"] for r in journal):
+        # The run's far-off senses were unreliable; read the same slips back.
+        from tinyworld.core.entropy import Entropy
+
+        sim.noise = Entropy.replaying(store, source_branch, kinds=("noise.",))
     skipper = TimeSkip(sim)
     god = GodChannel(llm)
 
+    batched: list = []  # observations held back to the end of a window
     for entry in journal:
         args = json.loads(entry["args_json"])
         op = entry["op"]
@@ -115,9 +121,15 @@ async def replay(
         elif op == "clock":
             await advance_world(sim, args["minutes"], args["tick_seq"])
         elif op == "async_intents":
-            await settle_intents(
-                sim, _INTENTS.validate_python(args["intents"]), args["tick_seq"], args.get("causes")
+            held, _ = await settle_intents(
+                sim, _INTENTS.validate_python(args["intents"]), args["tick_seq"], args.get("causes"),
+                remember=False, scenes=args.get("scenes", True),
             )
+            batched.extend(held.observations)
+        elif op == "window_end":
+            if batched and not args.get("drop"):
+                await sim.remember(batched, args["tick_seq"])
+            batched = []
         elif op == "drafts":
             drafts = [EventDraft.model_validate(d) for d in args["drafts"]]
             events = session.commit(drafts, atomic=False).events

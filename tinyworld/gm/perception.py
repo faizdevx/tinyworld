@@ -238,6 +238,35 @@ def perceive(event: Event, state: WorldState) -> list[Observation]:
     return list(found.values())
 
 
+NOISE_KIND = "noise."
+
+
+def distort(observation: Observation, noise) -> Observation:
+    """Something heard or seen from afar is sometimes taken wrongly.
+
+    Mishearing drops or garbles a word or two of what was said; seeing from a distance loses the
+    detail after the first clause. Close and certain observations are left alone. Every draw is
+    recorded by ``noise`` (an ``Entropy``), so a replay reads the same slips back.
+    """
+    if observation.confidence >= 0.9 or observation.mode == "self":
+        return observation
+    p = 0.4 if observation.mode == "auditory" else 0.25
+    if not noise.chance(NOISE_KIND + "happens", p):
+        return observation
+    text = observation.text
+    if observation.mode == "auditory":
+        words = text.split()
+        if len(words) >= 4:
+            at = noise.randint(NOISE_KIND + "word", 1, len(words) - 2)
+            words[at] = "..." if noise.chance(NOISE_KIND + "lost", 0.6) else words[at][::-1] if len(words[at]) > 3 else "..."
+            text = " ".join(words)
+    else:
+        cut = min((i for i in (text.find(","), text.find(";"), text.find(" and ")) if i > 0), default=-1)
+        if cut > 0:
+            text = text[:cut] + "."
+    return observation.model_copy(update={"text": text, "confidence": round(observation.confidence * 0.85, 3)})
+
+
 def limit_attention(observations: list[Observation], limit: int) -> list[Observation]:
     """Keep the ``limit`` most salient observations, in time order."""
     if limit <= 0:

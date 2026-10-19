@@ -20,6 +20,26 @@ institutions and factions, scarce things and live tensions. Then it runs.
 
 Contents: [How well it works](#how-well-it-works) · [What you can do](#what-you-can-do-with-it) · [System design](#system-design) · [Roadmap](#roadmap) · [Running it](#running-it)
 
+## v7: the living town
+
+The world is a place you can see, and the people in it live on their own clocks. They walk real
+paths between buildings, see each other across a street and start talking, walk to the edge of the
+known ground and make the map grow, come to a shrine to ask you for something, marry, have children,
+grow old and leave their goods to an heir. A paper comes out each day. You can follow anyone, ask them
+what they remember, run the same world twenty times and see what changes, and share it with a
+demigod and a god with a goal of their own.
+
+<p>
+<img src="docs/images/v7-town-follow.jpg" width="49%" alt="The Town view: a person selected, their plan, wants and memories beside the map">
+<img src="docs/images/v7-town-petitions.jpg" width="49%" alt="A petition at the podium, with six powers to answer it">
+</p>
+
+Behaviour is stochastic; storage is a recording. Chance comes from the operating system and every
+draw is written down, so two live runs differ and a replay of either is identical to it. What each
+phase does, what it was checked against and what is not done (Postgres; human labels for the judges;
+a long live run on a hosted model) is in [docs/V7_STATUS.md](docs/V7_STATUS.md), against
+[the plan](docs/V7_PLAN.md). Open any world's **Town view** from its page.
+
 ## v6: the studio
 
 You do not just watch a world any more. You give a goal, and a **team of agents

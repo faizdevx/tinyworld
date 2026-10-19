@@ -37,11 +37,18 @@ class Entropy:
         self.draws = 0
 
     @classmethod
-    def replaying(cls, store: Store, source_branch: str, branch_id: str | None = None) -> "Entropy":
-        """Serve the draws a finished run made, in order. Records nothing new."""
+    def replaying(cls, store: Store, source_branch: str, branch_id: str | None = None,
+                  kinds: tuple[str, ...] | None = None) -> "Entropy":
+        """Serve the draws a finished run made, in order. Records nothing new.
+
+        With ``kinds`` (name prefixes) only those draws are served: a replay that repeats part of
+        what happened, such as the noise in perception, reads just its own.
+        """
         recorded = [
             json.loads(row["args_json"]) for row in store.journal(source_branch) if row["op"] == OP
         ]
+        if kinds is not None:
+            recorded = [r for r in recorded if r["kind"].startswith(kinds)]
         return cls(store, branch_id, recorded=recorded)
 
     @property

@@ -127,6 +127,27 @@ def write(events: list[Event], day: date, state: WorldState | None = None) -> Ed
     )
 
 
+async def write_with_model(llm, events: list[Event], day: date, state: WorldState, context) -> Edition:
+    """A narrator model writes the day from the events that matter; anything it gets wrong sends us back
+    to the scripted writer. The check is mechanical: every story must cite events that exist that day."""
+    base = write(events, day, state)
+    todays = sorted(day_events(events, day), key=lambda e: (-weight(e)[0], e.seq))[:14]
+    todays = [e for e in todays if weight(e)[0] >= 2.0]
+    if llm is None or not todays:
+        return base
+    listing = "\n".join(f"[{e.seq}] {e.sim_time:%H:%M} {e.narration}" for e in sorted(todays, key=lambda e: e.seq))
+    reply = await llm.call(
+        "narrator.paper", Edition, system=SYSTEM,
+        user=f"Date: {day.isoformat()}\nEvents of the day (number in brackets):\n{listing}\n\nWrite the paper.",
+        context=context, fallback=base, max_tokens=1500,
+        check=lambda e: "; ".join(check(e, events)) or ("a paper needs a headline" if not e.headline.strip() else None),
+    )
+    edition = reply.value
+    edition.day = day.isoformat()
+    edition.source_events = base.source_events
+    return edition if reply.ok else base
+
+
 def _headline(s: Scored) -> str:
     text = s.event.narration.rstrip(".")
     return text if len(text) <= 80 else text[:77] + "..."
@@ -178,6 +199,11 @@ def reading_notes(state: WorldState, edition: Edition, readers: list[str]) -> li
         (r, f"I read the paper for {edition.day}. {edition.headline}. " + " ".join(s.body for s in edition.stories[:2]))
         for r in readers if r in state.entities
     ]
+
+
+def believed(edition: Edition) -> list[tuple[str, str, str]]:
+    """(subject, predicate, value) a reader takes from the paper: the headline as news, the rumours as hearsay."""
+    return [("town", "news", edition.headline)] + [("town", "rumour", r) for r in edition.rumours[:2]]
 
 
 def save(store, world_id: str, edition: Edition) -> None:
