@@ -30,6 +30,11 @@ DEFAULT_ATTRS: dict[str, dict[str, object]] = {
         "persona": dict,
         "faction": str,
         "knowledge": dict,
+        "faith": int,
+        "drives": dict,
+        "x": int,
+        "y": int,
+        "last_petition": str,
     },
     "place": {
         "description": str,

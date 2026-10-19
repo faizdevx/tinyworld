@@ -207,6 +207,15 @@ def check(state: WorldState, intent: Intent) -> Verdict:
             doing = "sleeps"
         return _resolved(intent, [], f"{agent.name} {doing}.", minutes)
 
+    if verb is Verb.PETITION:
+        from tinyworld.world import petitions
+
+        filed = petitions.file(state, agent, intent.args, intent.text)
+        if isinstance(filed, str):
+            return _impossible(intent, filed)
+        effects, narration = filed
+        return _resolved(intent, effects, narration, DEFAULT_MINUTES[Verb.PETITION])
+
     # Speech can ride along with any other action.
     preset: list = []
     if intent.utterance is not None:

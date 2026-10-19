@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from pydantic import TypeAdapter
 
-from tinyworld.core.events import Event, Intent
+from tinyworld.core.events import Event, EventDraft, Intent
 from tinyworld.core.session import WorldSession
 from tinyworld.core.store import Store
 from tinyworld.gm.adjudicator import Adjudicator
@@ -21,6 +21,7 @@ from tinyworld.god.parser import GodCommand
 from tinyworld.llm.router import LLMConfig
 from tinyworld.llm.structured import StructuredLLM
 from tinyworld.llm.trace import ReplayLLM, Tracer
+from tinyworld.llm.types import CallContext
 from tinyworld.sim.budget import Budget
 from tinyworld.sim.loop import Simulation
 from tinyworld.sim.step import apply_intents
@@ -110,6 +111,18 @@ async def replay(
         elif op == "budget":
             budget.run_cap = args["run_cap"]
             budget.agent_cap = args["agent_cap"]
+        elif op == "drafts":
+            drafts = [EventDraft.model_validate(d) for d in args["drafts"]]
+            events = session.commit(drafts, atomic=False).events
+            if events and args.get("notes"):
+                sim.write_notes([tuple(n) for n in args["notes"]], events[-1].seq, 0.8)
+        elif op == "town_intents":
+            gm = GameMaster(Adjudicator(llm), seed=session.world_id)
+            step = await apply_intents(
+                session, gm, _INTENTS.validate_python(args["intents"]),
+                CallContext(session.branch_id, args["tick_seq"]),
+            )
+            await sim.remember(step.observations, args["tick_seq"])
         elif op == "intents":
             gm = GameMaster(Adjudicator(llm), seed=session.world_id)
             await apply_intents(session, gm, _INTENTS.validate_python(args["intents"]))

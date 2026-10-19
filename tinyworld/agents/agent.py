@@ -39,6 +39,7 @@ Actions (verb, then what to fill in):
 - start: begin a long undertaking of your own. text = the goal; args = {"name": ..., \
 "days": n, "items": {id: n}, "helpers": [person ids], "idea": idea id, only to work out \
 a new idea}
+- petition: bring a need to the god. text = what you ask; args = {"kind": prayer | request | accusation | plea | bargain, "offering": what you give, optional}. Do this only when it matters to you and nothing else you can do will help
 - trade, use, make, attack, join, leave, other: target if any; describe it in `text`
 - rest, wait: nothing else needed
 

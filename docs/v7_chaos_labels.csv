@@ -1,0 +1,4 @@
+pair,run_a,run_b,which_is_more_interesting(a|b|same),why
+1,chaos 0.0 run (python -m tinyworld.eval.v7_experiments --json),chaos 0.5 run,,
+2,chaos 0.0 run,chaos 0.5 run,,
+3,chaos 0.0 run,chaos 0.5 run,,

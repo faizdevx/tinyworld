@@ -58,6 +58,7 @@ class Verb(str, Enum):
     WAIT = "wait"
     JOIN = "join"
     LEAVE = "leave"
+    PETITION = "petition"
     OTHER = "other"
 
 
