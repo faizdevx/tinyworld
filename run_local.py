@@ -8,7 +8,8 @@ What it does:
 3. runs the website on http://127.0.0.1:8000 with the local model as the provider;
 4. opens the browser. Type a scenario; the team builds it; the town opens.
 
-Paths are read from LLAMA_SERVER and LLAMA_MODEL, else the usual places on this machine.
+llama.cpp's ``llama-server`` is found on PATH (or LLAMA_SERVER); the model file comes from --model or
+LLAMA_MODEL (any instruct GGUF, for example Qwen2.5-7B-Instruct-Q4_K_M.gguf).
 Use --offline to run without any model (the scripted stand-in), --port to change the site's port.
 """
 
@@ -21,8 +22,9 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-DEFAULT_SERVER = "D:/DATA_ANALYSIS/llama_cpp/llama-server.exe"
-DEFAULT_MODEL = "D:/DATA_ANALYSIS/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+import shutil
+
+DEFAULT_SERVER = shutil.which("llama-server") or "llama-server"
 
 
 def up(base: str) -> bool:
@@ -34,7 +36,7 @@ def up(base: str) -> bool:
 
 
 def start_model(server: str, model: str, port: int) -> subprocess.Popen | None:
-    if not (Path(server).exists() and Path(model).exists()):
+    if not (shutil.which(server) or Path(server).exists()) or not (model and Path(model).exists()):
         return None
     print(f"Starting the model server on port {port} (first load takes a minute)...")
     return subprocess.Popen(
@@ -50,16 +52,20 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--model-port", type=int, default=8081)
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--model", help="path to a .gguf model file (or set LLAMA_MODEL)")
     options = parser.parse_args()
 
     child = None
     if not options.offline:
         base = os.environ.setdefault("LOCAL_BASE_URL", f"http://127.0.0.1:{options.model_port}/v1")
         if not up(base):
-            child = start_model(os.environ.get("LLAMA_SERVER", DEFAULT_SERVER), os.environ.get("LLAMA_MODEL", DEFAULT_MODEL), options.model_port)
+            child = start_model(os.environ.get("LLAMA_SERVER", DEFAULT_SERVER), options.model or os.environ.get("LLAMA_MODEL", ""), options.model_port)
             if child is None:
-                print(f"No model server at {base} and no llama.cpp found. Start one, or set LLAMA_SERVER and LLAMA_MODEL,\n"
-                      "or run with --offline to use the scripted stand-in.")
+                print(f"No model server at {base}, and llama-server or a model file was not found.\n"
+                      "  1. install llama.cpp (https://github.com/ggml-org/llama.cpp) and download a .gguf instruct model\n"
+                      "  2. run: python run_local.py --model path/to/model.gguf\n"
+                      "  or start any OpenAI-compatible server and set LOCAL_BASE_URL,\n"
+                      "  or run with --offline for the scripted stand-in (no model, shallow stories).")
                 sys.exit(2)
             deadline = time.time() + 300
             while time.time() < deadline and not up(base):

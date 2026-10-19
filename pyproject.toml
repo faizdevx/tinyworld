@@ -3,10 +3,12 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tinyworld"
-version = "2.0.0.dev0"
-description = "Event-sourced generative world simulation with LLM agents"
+name = "multi-agent-scenario-creator"
+version = "7.0.0"
+description = "A team of agents builds a world from a scenario you type, on an open-weight model you run yourself, and its people live in it"
 requires-python = ">=3.12"
+license = { text = "MIT" }
+readme = "README.md"
 dependencies = [
     "pydantic==2.13.5",
     "fastapi==0.115.6",

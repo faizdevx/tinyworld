@@ -370,7 +370,11 @@ class Town:
             await self._witnessed(self.session.store.events(self.session.branch_id, after=made.event_seqs[0] - 1)[: len(made.event_seqs)])
             state = self.session.state
         here = [p.id for p in state.people_at(state.entities[petition.by].location)] if petition else []
-        draft, notes = petitions.answer(state, petition_id, power, text, effects=effects, witnesses=here)
+        try:
+            draft, notes = petitions.answer(state, petition_id, power, text, effects=effects, witnesses=here)
+        except ValueError as exc:  # already answered, or the petitioner is gone
+            self.last_refused = str(exc)
+            return []
         beliefs = [(petition.by, *petitions.belief_of(petition, power))]
         events = self.commit([draft], notes, beliefs)
         await self._witnessed(events)

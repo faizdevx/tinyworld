@@ -10,8 +10,9 @@ from tinyworld.fixtures import berlin
 
 @pytest.fixture
 def api(monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENROUTER_API_KEY", "GEMINI_API_KEY",
+                 "GOOGLE_API_KEY", "TINYWORLD_PROVIDER", "LOCAL_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("TINYWORLD_SIM_DELAY", "0")
     with TestClient(create_app(Hub())) as client:
         yield client
