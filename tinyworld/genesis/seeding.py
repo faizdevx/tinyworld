@@ -226,6 +226,9 @@ def seed_drafts(bible: Bible) -> tuple[list[EventDraft], list[Finding]]:
             goals=spec.goals,
             fears=spec.fears,
             secrets=spec.secrets,
+            opinion=spec.opinion,
+            grudge=spec.grudge,
+            rival_want=spec.rival_want,
             aptitudes=spec.aptitudes,
             speech_style=spec.speech_style,
             knowledge=KnowledgeBoundary(

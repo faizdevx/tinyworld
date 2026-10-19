@@ -235,6 +235,10 @@ class Simulation:
         )
         if any(m.importance >= self.salience for m in fresh):
             return "react", block
+        from tinyworld.world import drives
+
+        if drives.frustration(entity) >= 0.6:
+            return "react", block
         return "routine", block
 
     def _before_promises(self, step: int) -> int:

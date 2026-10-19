@@ -28,6 +28,30 @@ DEFAULT_FAITH = 50
 FAITH_SHIFT = {"grant": 10, "whisper": 6, "sign": 3, "refuse": -5, "punish": -12, "ignore": -8, "silence": -8}
 TIMEOUT = timedelta(hours=12)
 COOLDOWN = timedelta(hours=24)
+HOLY_WORDS = ("shrine", "temple", "church", "mosque", "mandir", "gurdwara", "chapel", "cathedral", "monastery", "podium", "altar")
+# Those who see a power at work take something from it.
+WITNESS_SHIFT = {"sign": 4, "grant": 3, "punish": 2}
+
+
+def holy_places(state: WorldState) -> list[str]:
+    """Places where a petition is made: shrines, temples, churches, or the podium."""
+    return sorted(
+        e.id for e in state.entities.values()
+        if e.kind == "place" and any(w in (e.name + " " + str(e.attrs.get("place_type", ""))).lower() for w in HOLY_WORDS)
+    )
+
+
+def at_holy_place(state: WorldState, person: Entity) -> bool:
+    return person.location in holy_places(state)
+
+
+def nearest_holy_place(state: WorldState, person: Entity) -> str | None:
+    best = None
+    for place in holy_places(state):
+        route = state.path(person.location, place) if person.location else None
+        if route is not None and (best is None or route[1] < best[0]):
+            best = (route[1], place)
+    return best[1] if best else None
 
 
 def faith_of(person: Entity) -> int:
@@ -96,6 +120,8 @@ def file(state: WorldState, person: Entity, args: dict, text: str) -> tuple[list
     offering = args.get("offering")
     if offering is not None and not isinstance(offering, str):
         return "an offering is described in words"
+    if state.grid and holy_places(state) and not at_holy_place(state, person):
+        return "a petition is made at a holy place: go to a shrine, temple or church first"
     if any(p.by == person.id for p in open_petitions(state)):
         return f"{person.name} already has a petition waiting for an answer"
     last = last_filed(state, person.id)
@@ -103,6 +129,7 @@ def file(state: WorldState, person: Entity, args: dict, text: str) -> tuple[list
         return f"{person.name} asked too recently to ask again"
     fid = _next_id(state)
     shown = f"{person.name} petitions the god ({kind}): {text}"
+    seen = f"{person.name} kneels and prays" + (f" at {state.entities[person.location].name}." if person.location in state.entities else ".")
     fact = Fact(
         id=fid, text=shown, subject=person.id, predicate="petition", public=False,
         value={
@@ -110,7 +137,7 @@ def file(state: WorldState, person: Entity, args: dict, text: str) -> tuple[list
             "place": person.location, "status": "open",
         },
     )
-    return [fx.AssertFact(fact=fact)], shown
+    return [fx.AssertFact(fact=fact)], seen
 
 
 def _closed(state: WorldState, petition: Petition, status: str, answer: str, text: str) -> list:
@@ -146,6 +173,19 @@ def answer(
     changes += _closed(state, petition, status, power, text)
     changes.append(fx.SetAttr(entity=person.id, key="faith", value=max(0, min(100, faith_of(person) + shift))))
     changes.append(fx.SetAttr(entity=person.id, key="last_petition", value=state.sim_time.isoformat()))
+    # The faith drive moves with the petitioner's faith.
+    from tinyworld.world import drives as dr
+
+    levels = dr.of(person)
+    if "faith" in levels:
+        new = {k: list(v) for k, v in levels.items()}
+        new["faith"][0] = max(0, min(100, new["faith"][0] + shift))
+        changes.append(fx.SetAttr(entity=person.id, key=dr.KEY, value=new))
+    for other in witnesses or []:
+        bump = WITNESS_SHIFT.get(power, 0)
+        watcher = state.entities.get(other)
+        if bump and other != person.id and watcher is not None and watcher.kind == "person" and watcher.alive:
+            changes.append(fx.SetAttr(entity=other, key="faith", value=min(100, faith_of(watcher) + bump)))
     say = text.strip() or {
         "grant": "It is given.", "whisper": "A voice, in the night.", "sign": "A sign is seen.",
         "refuse": "No.", "punish": "You are answered with judgement.", "ignore": "",

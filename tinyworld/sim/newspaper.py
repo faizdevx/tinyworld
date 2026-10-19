@@ -74,7 +74,8 @@ def weight(event: Event) -> tuple[float, str]:
     elif "TransferItem" in kinds or "ChangeQuantity" in kinds:
         w, why = 3.0, "goods"
     elif "AssertFact" in kinds:
-        w, why = 5.0 if "petition" in event.narration else 3.5, "petition" if "petition" in event.narration else "news"
+        prayed = any(getattr(getattr(x, "fact", None), "id", "").startswith("fact:petition_") for x in event.effects)
+        w, why = (5.0, "petition") if prayed else (3.5, "news")
     elif "MakeCommitment" in kinds:
         w, why = 3.5, "promise"
     elif "Utter" in kinds:

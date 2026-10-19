@@ -292,6 +292,25 @@ def _route(blocked: set, roads: set, start, goal, box) -> list[tuple[int, int]] 
     return None
 
 
+def _ensure_shrine(state: WorldState) -> list:
+    """Residents ask the god at a holy place. A world without one gets a shrine near its hub."""
+    from tinyworld.world import petitions
+
+    if petitions.holy_places(state):
+        return []
+    places, edges = _graph(state)
+    if not places or "place:the_shrine" in state.entities:
+        return []
+    hub = max(places, key=lambda p: (len(edges[p]), p))
+    return [
+        fx.CreateEntity(entity=Entity(
+            id="place:the_shrine", kind="place", name="The Shrine",
+            attrs={"description": "A small shrine where people come to ask the god for help.", "place_type": "shrine"},
+        )),
+        fx.SetEdge(a="place:the_shrine", b=hub, edge=PlaceEdge(travel_minutes=4)),
+    ]
+
+
 def _paint(plots: dict[str, Plot]):
     """Terrain, wall tiles, regions and outside doors for a set of placed plots."""
     terrain: dict[tuple[int, int], str] = {}
@@ -343,6 +362,11 @@ def layout(state: WorldState) -> list[EventDraft]:
     """Events that lay the world out on a grid: terrain, streets, derived edges, positions."""
     if state.grid:
         raise ValueError("this world already has a tile map")
+    shrine = _ensure_shrine(state)
+    if shrine:
+        state = state.model_copy(deep=True)
+        for effect in shrine:
+            apply_effect(state, effect)
     plots, rooms, edges = plan(state)
     if not plots:
         return []
@@ -407,12 +431,13 @@ def layout(state: WorldState) -> list[EventDraft]:
         effects.append(fx.SetTiles(tiles=tiles[i:i + 4000], regions=[]))
     for i in range(0, len(region_list), 200):
         effects.append(fx.SetTiles(tiles=[], regions=region_list[i:i + 200]))
+    effects = list(shrine) + effects
     drafts = [EventDraft(kind="system", actor="system", visibility="god_only", effects=effects,
                          narration="The town is laid out on a map.")]
 
     # Edges are derived from where places touch; the bible's own links give way to them.
     working = state.model_copy(deep=True)
-    for e in effects:
+    for e in effects[len(shrine):]:
         apply_effect(working, e)
     old = [fx.SetEdge(a=k.split("|")[0], b=k.split("|")[1], edge=None) for k in sorted(state.edges)]
     new = []
@@ -701,3 +726,75 @@ def _centre_of(state: WorldState, place_id: str) -> tuple[float, float]:
         return 0.0, 0.0
     r = regions[0]
     return (r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2
+
+
+# -- a resident builds something ----------------------------------------------
+
+
+def build_near(state: WorldState, owner: Entity, name: str, kind: str = "building", near: tuple[int, int] | None = None) -> list:
+    """Effects for a new building the owner has finished, on free ground close to ``near``.
+
+    The first free spot is taken, nearest first, so the same state gives the same building. The
+    place is owned by ``owner``; its tiles, its entity and its joins to the places it touches are
+    all effects, so the result is part of the log.
+    """
+    name = name.strip()[:60]
+    entity = Entity(
+        id=make_id("place", name), kind="place", name=name,
+        attrs={"description": f"{name}, built by {owner.name}.", "place_type": kind, "owner": owner.id},
+    )
+    if entity.id in state.entities:
+        entity = entity.model_copy(update={
+            "id": f"{entity.id}_{sum(1 for e in state.entities if e.startswith(entity.id)) + 1}",
+        })
+    spot = near or grid.position_of(owner)
+    if spot is None or not state.grid:
+        return []
+    w, h = size_of(state, entity)
+    w, h = min(w, 8), min(h, 6)
+    margin = 2
+
+    def free(x0: int, y0: int) -> bool:
+        for y in range(y0 - margin, y0 + h + margin):
+            for x in range(x0 - margin, x0 + w + margin):
+                if grid.terrain_at(state, x, y) not in (GROUND, FIELD):
+                    return False
+                here = grid.place_at(state, x, y)
+                if here is None or not here.startswith((WILD_PREFIX, BLOCK_PREFIX)):
+                    return False
+                if any(e.kind == "person" and grid.position_of(e) == (x, y) for e in state.entities.values()):
+                    return False
+        return True
+
+    found = None
+    for r in range(4, 40):
+        ring = [
+            (spot[0] + dx, spot[1] + dy)
+            for dx in range(-r, r + 1) for dy in range(-r, r + 1)
+            if max(abs(dx), abs(dy)) == r
+        ]
+        for x, y in sorted(ring, key=lambda t: (t[1], t[0])):
+            if free(x, y):
+                found = (x, y)
+                break
+        if found:
+            break
+    if found is None:
+        return []
+    plot = Plot(entity.id, w, h, False, x=found[0], y=found[1])
+    dx, dy = spot[0] - plot.cx, spot[1] - plot.cy
+    plot.door_side = ("e" if dx > 0 else "w") if abs(dx) >= abs(dy) else ("s" if dy > 0 else "n")
+    terrain, _, regions, doors = _paint({entity.id: plot})
+    tiles = [fx.Tile(x=x, y=y, terrain=t) for (x, y), t in sorted(terrain.items(), key=lambda kv: (kv[0][1], kv[0][0]))]
+    x0, y0, x1, y1 = plot.rect()
+    effects: list = [fx.CreateEntity(entity=entity), fx.SetTiles(tiles=tiles, regions=[Region(place=entity.id, x0=x0, y0=y0, x1=x1, y1=y1)])]
+    working = state.model_copy(deep=True)
+    for e in effects:
+        apply_effect(working, e)
+    for a, b in sorted(grid.adjacency(working)):
+        if entity.id in (a, b) and edge_key(a, b) not in state.edges:
+            other = b if a == entity.id else a
+            ca = (plot.cx, plot.cy)
+            cb = _centre_of(working, other)
+            effects.append(fx.SetEdge(a=a, b=b, edge=PlaceEdge(travel_minutes=max(1, round(math.dist(ca, cb) / grid.TILES_PER_MINUTE)))))
+    return effects

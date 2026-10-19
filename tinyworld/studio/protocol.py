@@ -28,7 +28,7 @@ Station = Literal[
 ]
 TaskStatus = Literal["todo", "doing", "review", "done", "blocked", "cancelled"]
 TaskKind = Literal["plan", "research", "section", "review", "digest", "custom"]
-DecisionKind = Literal["question", "permission", "merge"]
+DecisionKind = Literal["question", "permission", "merge", "petition"]
 DecisionStatus = Literal["open", "answered", "cancelled"]
 
 MERGE_OPTIONS = ["Merge", "Request changes", "Reject"]

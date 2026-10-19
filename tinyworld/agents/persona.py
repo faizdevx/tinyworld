@@ -25,6 +25,9 @@ class Persona(Model):
     goals: list[str] = Field(default_factory=list)
     fears: list[str] = Field(default_factory=list)
     secrets: list[str] = Field(default_factory=list)
+    opinion: str = ""
+    grudge: str = ""
+    rival_want: str = ""
     aptitudes: dict[str, int] = Field(default_factory=dict)
     speech_style: str = ""
     knowledge: KnowledgeBoundary = Field(default_factory=KnowledgeBoundary)
@@ -54,6 +57,9 @@ def render(entity: Entity, persona: Persona) -> str:
         _line("You want", persona.goals),
         _line("You fear", persona.fears),
         _line("Secrets you keep", persona.secrets),
+        f"A view you hold strongly: {persona.opinion}" if persona.opinion else None,
+        f"A grudge you carry: {persona.grudge}" if persona.grudge else None,
+        f"A want that stands in someone else's way: {persona.rival_want}" if persona.rival_want else None,
         _line(
             "Natural aptitudes",
             [f"{name} {level}/10" for name, level in sorted(persona.aptitudes.items())],

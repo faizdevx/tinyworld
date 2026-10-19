@@ -31,8 +31,6 @@ def update_prices(state: WorldState) -> list[fx.SetRule]:
     out = []
     for item in sorted(e.id for e in state.entities.values() if e.kind in ("item", "resource")):
         stock = stock_of(state, item)
-        if stock == 0 and not any(i == item for e in state.entities.values() for i in e.inventory):
-            continue
         per_head = stock / people
         # About two of each per person is "enough"; fewer pushes the price up, more pulls it down.
         factor = max(FLOOR, min(CEILING, 2.0 / max(per_head, 0.25)))

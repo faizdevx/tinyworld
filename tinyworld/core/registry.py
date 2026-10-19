@@ -36,6 +36,9 @@ DEFAULT_ATTRS: dict[str, dict[str, object]] = {
         "y": int,
         "last_petition": str,
         "route": dict,
+        "parents": list,
+        "inherited": dict,
+        "spouse": str,
     },
     "place": {
         "description": str,
@@ -57,6 +60,7 @@ DEFAULT_ATTRS: dict[str, dict[str, object]] = {
         "members": int,
         "resources": int,
         "morale": int,
+        "authority": bool,
     },
     "faction": {
         "description": str,
@@ -66,6 +70,7 @@ DEFAULT_ATTRS: dict[str, dict[str, object]] = {
         "members": int,
         "influence": int,
         "morale": int,
+        "authority": bool,
     },
     "resource": {"description": str, "unit": str, "scarcity": str},
 }

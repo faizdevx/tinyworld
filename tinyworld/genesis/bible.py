@@ -154,6 +154,10 @@ class FigureSpec(Model):
     goals: list[str] = Field(default_factory=list)
     fears: list[str] = Field(default_factory=list)
     secrets: list[str] = Field(default_factory=list)
+    # The three edges: one strong opinion, one grudge, one want that gets in someone else's way.
+    opinion: str = ""
+    grudge: str = ""
+    rival_want: str = ""
     speech_style: str = ""
     aptitudes: dict[str, int] = Field(default_factory=dict)
     education: str = ""

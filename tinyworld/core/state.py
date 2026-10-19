@@ -99,6 +99,8 @@ class Process(Model):
     outcome: Fact | None = None
     # An idea this undertaking sets out to work out; its workers learn it.
     teaches: str | None = None
+    # A building this undertaking puts up when it is finished (on a tile map).
+    builds: str | None = None
 
     @model_validator(mode="after")
     def _valid_id(self):

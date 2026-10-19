@@ -123,6 +123,10 @@ async def replay(
             events = session.commit(drafts, atomic=False).events
             if events and args.get("notes"):
                 sim.write_notes([tuple(n) for n in args["notes"]], events[-1].seq, 0.8)
+            if events and args.get("beliefs"):
+                from tinyworld.sim.town import write_beliefs
+
+                write_beliefs(sim, [tuple(b) for b in args["beliefs"]])
         elif op == "town_intents":
             gm = GameMaster(Adjudicator(llm), seed=session.world_id)
             step = await apply_intents(

@@ -5,6 +5,7 @@ resolved here, or it is physically possible and needs the adjudicator to
 decide what happens. No LLM is involved in this module.
 """
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -152,6 +153,10 @@ def _shift(state: WorldState, agent: Entity, intent: Intent, preset: list) -> Ve
     paid = wage_for(state, minutes)
     if paid is not None:
         effects.append(fx.ChangeQuantity(holder=agent.id, item=paid[0], delta=paid[1]))
+        from tinyworld.world import laws
+
+        for group, due in laws.tax_due(state, agent.id, paid[1]):
+            effects.append(fx.TransferItem(item=paid[0], quantity=due, source=agent.id, dest=group))
     return _resolved(
         intent, effects,
         f"{agent.name} works at {name_of(state, workplace)}.",
@@ -159,7 +164,27 @@ def _shift(state: WorldState, agent: Entity, intent: Intent, preset: list) -> Ve
     )
 
 
+def preset_for_sale(agent, buyer, home, item: str, price: int) -> list:
+    """What a sale does if the buyer accepts: the deed changes hands and the price is paid."""
+    return [
+        fx.SetAttr(entity=home.id, key="owner", value=buyer.id),
+        fx.TransferItem(item=item, quantity=price, source=buyer.id, dest=agent.id),
+    ]
+
+
 def check(state: WorldState, intent: Intent) -> Verdict:
+    verdict = _check(state, intent)
+    if verdict.status == "resolved":
+        from tinyworld.world import laws
+
+        if laws.touching(state, intent):
+            # A law applies: the Game Master decides what follows, with the law in front of it.
+            effects = list(verdict.outcome.effects)
+            return Verdict("adjudicate", preset=effects)
+    return verdict
+
+
+def _check(state: WorldState, intent: Intent) -> Verdict:
     agent = state.entities.get(intent.agent)
     if agent is None or agent.kind != "person":
         return _impossible(intent, "no such person")
@@ -219,6 +244,51 @@ def check(state: WorldState, intent: Intent) -> Verdict:
         if verb is Verb.REST and intent.args.get("sleep") is True:
             doing = "sleeps"
         return _resolved(intent, [], f"{agent.name} {doing}.", minutes)
+
+    if verb in (Verb.FOUND, Verb.DISSOLVE, Verb.SPLIT, Verb.DECREE, Verb.LEND, Verb.REPAY) or (
+        verb in (Verb.JOIN, Verb.LEAVE) and target is not None and target.kind in ("org", "faction")
+    ):
+        from tinyworld.world import economy, institutions, laws
+
+        aims = [a for a in re.split(r"[;\n]", intent.text or "") if a.strip()] if intent.text else []
+        if verb is Verb.FOUND:
+            done = institutions.found(state, agent, str(intent.args.get("name", "")), [a.strip() for a in aims])
+        elif verb is Verb.JOIN:
+            done = institutions.join(state, agent, target.id)
+        elif verb is Verb.LEAVE:
+            done = institutions.leave(state, agent, target.id)
+        elif verb is Verb.DISSOLVE:
+            done = institutions.dissolve(state, agent, target_id or "")
+        elif verb is Verb.SPLIT:
+            followers = [f for f in intent.args.get("followers", []) if isinstance(f, str)]
+            done = institutions.split(state, agent, target_id or "", str(intent.args.get("name", "")), [a.strip() for a in aims], followers)
+        elif verb is Verb.DECREE:
+            done = laws.decree(state, agent, intent.args, intent.text)
+        else:
+            item, quantity = intent.args.get("item"), _int_arg(intent, "quantity", 1)
+            if not isinstance(item, str) or quantity is None:
+                return _impossible(intent, "name the item and a whole quantity")
+            done = (economy.lend if verb is Verb.LEND else lambda s, a, t, i, q: economy.repay(s, a, t, q))(
+                state, agent, target_id or "", item, quantity
+            )
+        if isinstance(done, str):
+            return _impossible(intent, done)
+        effects, narration = done
+        return _resolved(intent, effects, narration, 10)
+
+    if verb is Verb.SELL:
+        place = intent.args.get("place")
+        item, price = intent.args.get("item"), _int_arg(intent, "price", 0)
+        home = state.entities.get(place) if isinstance(place, str) else None
+        if home is None or home.kind != "place" or home.attrs.get("owner") != agent.id:
+            return _impossible(intent, "you can only sell a place you own")
+        if target is None or target.kind != "person" or not target.alive or not within_reach(state, agent, target.id):
+            return _impossible(intent, "the buyer must be here")
+        if not isinstance(item, str) or item not in state.entities or price is None:
+            return _impossible(intent, "name the price and what it is paid in")
+        if target.inventory.get(item, 0) < price:
+            return _impossible(intent, f"{target.name} cannot pay {price}")
+        return Verdict("adjudicate", preset=preset_for_sale(agent, target, home, item, price))
 
     if verb is Verb.EXPLORE:
         from tinyworld.world import grid, walking

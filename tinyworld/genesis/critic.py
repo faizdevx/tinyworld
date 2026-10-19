@@ -130,6 +130,13 @@ def check(bible: Bible) -> list[Finding]:
                 "gap", "figures",
                 f"{figure.name} has no goals; give them at least one concrete want",
             )
+        for field, what in (
+            ("opinion", "one strong opinion"),
+            ("grudge", "one grudge against someone or something"),
+            ("rival_want", "one want that gets in another person's way (name who)"),
+        ):
+            if not getattr(figure, field).strip():
+                add("gap", "figures", f"{figure.name} has no {field.replace('_', ' ')}; give them {what}")
 
     for name in _duplicates([r.name for r in bible.economy.resources]):
         add("contradiction", "economy", f"resource {name!r} is defined twice")
