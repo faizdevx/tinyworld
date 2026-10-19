@@ -482,6 +482,9 @@ def create_app(hub: Hub | None = None) -> FastAPI:
     from tinyworld.api import town_routes
 
     town_routes.install(app, the_hub)
+    from tinyworld.api import launch_routes
+
+    launch_routes.install(app, the_hub)
 
     # -- live updates ---------------------------------------------------
 

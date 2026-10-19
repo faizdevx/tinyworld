@@ -192,3 +192,29 @@ tiles, and it needs no library or network.
 <p>
 <img src="images/v7-town-graphs.jpg" width="49%" alt="Who likes whom: green warm, red cold">
 </p>
+
+## A live run on a local open-weight model
+
+`python -m tinyworld.eval.v7_live --provider local --hours 3 --residents 4`: Falkenrode laid out on a
+map, four residents deciding (the rest background), drives, petitions written by the model, fortune,
+perception noise and the paper on; Qwen2.5-7B-Instruct Q4 under llama.cpp on a 4 GB card, one request
+at a time.
+
+| | |
+|---|---|
+| Simulated | 3 hours |
+| Real time | 77 minutes |
+| Model calls | 277 (all the local model), $0 |
+| Invariant violations / anachronisms | 0 / 0 |
+| Conversations | 1, and it was a disagreement: Friedrich Brandt pressed Hanna Stein to keep the night shift running and she refused to see it docked, in her own words and from her own grudge |
+| Residents' own effects | 4 undertakings started, 5 transfers, 3 quantity changes, 2 moves |
+| Petitions | **0** |
+| Groups founded by residents | **0** |
+| Papers | 0 (no day ended) |
+
+So the plumbing holds on a real small model, and the one conversation shows the persona edges doing
+their job. The phase 4 and 5 live exit checks are **not met**: three simulated hours is too short for
+petitions to arrive (the draw is about a quarter of a resident's urgency per hour, with a one-day
+cooldown), the disagreement share is one conversation, and nobody founded a group. Treat them as open
+until a longer run (a simulated day or more) is done. The liveliness figure in the report is inflated
+by the layout events at the start; compare runs, not the number.
