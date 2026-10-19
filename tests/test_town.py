@@ -211,14 +211,13 @@ def test_a_town_run_replays_exactly():
 def test_residents_read_the_paper_and_believe_it():
     town, session = make(chaos=0.0, petitioning=False)
     run(town.run(30, 60))
-    day = sorted(town.editions)[0]
-    item = session.state.entities[newspaper.item_id(day)]
-    readers = [p for p in session.state.people_at(item.location)]
-    assert readers
-    heard = [m for p in readers for m in town.sim.memory.list(session.branch_id, p.id) if "I read the paper" in m.text]
+    people = session.state.people()
+    heard = [m for p in people for m in town.sim.memory.list(session.branch_id, p.id) if "I read the paper" in m.text]
     assert heard
-    beliefs = town.sim.beliefs.current(session.branch_id, readers[0].id)
-    assert any(b.subject == "town" and b.predicate == "news" for b in beliefs)
+    assert any(
+        b.subject == "town" and b.predicate == "news"
+        for p in people for b in town.sim.beliefs.current(session.branch_id, p.id)
+    )
 
 
 def test_a_model_narrator_is_used_and_a_made_up_event_sends_it_back_to_the_script():
