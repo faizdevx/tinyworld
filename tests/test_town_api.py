@@ -123,3 +123,27 @@ def test_the_town_view_opens_in_the_app(api):
     page = api.get("/app/index.html")
     assert page.status_code == 200
     assert api.get("/app/js/town.js").status_code == 200
+
+
+def test_a_scenario_goes_in_and_a_town_comes_out(api):
+    import time as _t
+
+    assert api.post("/api/launch", json={"scenario": "hi"}).status_code == 422
+    made = api.post("/api/launch", json={"scenario": "A small trading town on the Silk Road, 1250, where the road is closed."})
+    assert made.status_code == 200
+    world = made.json()["world_id"]
+    deadline = _t.time() + 180
+    while _t.time() < deadline:
+        p = api.get(f"/api/launch/{world}").json()
+        if p["stage"] in ("ready", "failed"):
+            break
+        _t.sleep(0.2)
+    assert p["stage"] == "ready", p
+    assert p["tasks"] and p["progress"] == 1.0 and "geography" in p["sections"]
+    early = api.post(f"/api/launch/{world}/enter")
+    assert early.status_code == 200
+    branch = early.json()["branch_id"]
+    assert api.post(f"/api/launch/{world}/enter").json()["branch_id"] == branch
+    snap = api.get(f"/api/town/{branch}").json()
+    assert snap["chunks"] and snap["people"]
+    assert api.post("/api/launch/nope/enter").status_code == 404

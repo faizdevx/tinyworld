@@ -313,3 +313,12 @@ button.ghost.small { padding: 2px 8px; }
 .town-scrub { flex: 1; min-width: 120px; }
 .town-graph { width: 100%; max-width: 340px; background: var(--soft); border-radius: var(--radius); }
 @media (max-width: 900px) { .town { grid-template-columns: 1fr; height: auto; } .town-panel { max-height: 60vh; } }
+
+/* Launch */
+.scenario textarea { width: 100%; font-size: 17px; padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel); color: var(--ink); resize: vertical; }
+.scenario button.link { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0 6px 0 0; text-decoration: underline; font: inherit; }
+.launch { max-width: 980px; margin: 0 auto; padding: 24px 16px; }
+.launch-cols { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 800px) { .launch-cols { grid-template-columns: 1fr; } }
+.launch-feed { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow: auto; }
+.launch ul.plain { list-style: none; margin: 0; padding: 0; }

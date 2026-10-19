@@ -1,5 +1,6 @@
 import { api } from "./api.js";
 import { action, el, setCrumbs, tag } from "./ui.js";
+import { scenarioBox } from "./launch.js";
 
 const EXAMPLE = "India never got Jio in 2016. Lucknow.";
 
@@ -38,7 +39,10 @@ export async function showHome(view) {
   view.append(
     el("div", { class: "page" },
       el("div", { class: "hero" },
-        el("h1", {}, "What world?"),
+        el("h1", {}, "Enter a scenario"),
+        el("p", { class: "muted" }, "A team of agents builds it from the web, then its people live in it on their own clocks. You answer when they ask."),
+        scenarioBox(view),
+        el("h2", { style: "margin-top:28px" }, "Or build step by step"),
         el("div", { class: "prompt" }, premise, create),
         el("div", { class: "row", style: "margin-top:10px" }, team),
         el("div", { class: "row", style: "margin-top:10px" },

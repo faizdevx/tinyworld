@@ -681,3 +681,14 @@ spread across several runs of the same premise.
 The previous, rule-based version (`WORLD/`) was removed after its useful ideas
 were carried over; see [docs/V1_CONCEPTS.md](docs/V1_CONCEPTS.md). It remains
 in the git history.
+
+## One command, your own model
+
+```bash
+python run_local.py          # starts llama.cpp if needed, runs the site, opens the browser
+python run_local.py --offline   # no model: the scripted stand-in
+```
+
+Type a scenario on the front page. The team builds it (you can watch the jobs and what they say), the
+world is merged, laid out as a town and opened in the Town view, where its people live on their own
+clocks. Set `LLAMA_SERVER` and `LLAMA_MODEL` if llama.cpp is not in the usual place.
