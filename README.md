@@ -102,7 +102,7 @@ has now had **two short live probes on an open-weight model** (Nemotron 3 Super
 problems: a researcher that never stopped searching, and a section reply cut off
 mid-JSON. Both are fixed and the fixes are tested, but the free daily quota ran
 out before a full build could be run live, so **a complete live build has still
-not happened**. Postgres and workers are not built. Details, step by step, are in
+not happened** on a hosted model (it has on a local one, below). A durable job queue and worker processes are built (`python -m tinyworld.studio.worker`); Postgres is not. Details, step by step, are in
 [docs/V6_PLAN.md](docs/V6_PLAN.md#the-first-live-runs). The design follows
 [AgentCraft](https://github.com/blendi-remade/agentcraft): a foreman that owns
 the truth, a view that holds none, agents that use tools, a decision queue, and
@@ -361,7 +361,8 @@ system role an agent that can use tools.
 | Fine-tune and serve a small model for routine calls, and check it against the judge | Not done |
 | Constrained decoding (grammar) for weak models | Partly: the schema is sent as `json_schema`, then `guided_json`, then `json_object` |
 | Parallel time skips (one call per person per year) | Not done |
-| Postgres, a job queue, one worker per branch, sign-in | Not done |
+| Job queue and worker processes (lease, crash recovery, fair sharing between tenants, cap on running builds) | **Built, tested with the scripted team** |
+| Postgres, sign-in | Not done. The queue is plain SQL on the same SQLite store, so the move is a driver change. |
 | A live benchmark across premises and seeds | Not done |
 
 **Ends when:** a world is built and run end to end on open-weight models only,

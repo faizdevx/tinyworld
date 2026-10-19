@@ -104,7 +104,7 @@ it does not mean a model drives it well.
 | **v6.3** residents join | Residents who deliberate run a short tool session (look around, recall, check promises and undertakings, then decide), checked by the same rules and replayable; a Town tab lists the seeded world's people; the console and API can ask the team for a change on a built world | The studio and the live map as one view |
 | **v6.4** the scene | A tiled studio with rooms, walls and doorways; pixel characters with their own hair, skin and colour, two walking frames, walking A* paths between stations; furniture that shows state (a card per task on the wall, a paper per section on the drafting table, a lit podium when you are needed); speech bubbles; day and night from your clock; a command console (`@name`, `/answer`, `/status`, `/pause`, `/resume`, `/stop`, `/spawn`, `/budget`, `/help`) with name completion; agent cards with pause, stop, message and cost; a title badge and desktop notification when a decision waits | Hand-drawn art; sound |
 | **v6.5** talking and steering | `send_message` between agents, delivered at the recipient's next step even mid-task; the same for your messages; editable shared notes; one agent can run on a different model from the rest | Mixed hosted and open-weight teams run live |
-| **v6.6** durability | A recorded build (model replies, searches, pages, your answers) replays with no model, no web and no user, and gives the same draft; a stopped build resumes without redoing finished tasks, and a running one restarts on server start | Postgres, a job queue, one worker per studio, fair sharing between studios |
+| **v6.6** durability | A recorded build (model replies, searches, pages, your answers) replays with no model, no web and no user, and gives the same draft; a stopped build resumes without redoing finished tasks, and a running one restarts on server start | Postgres. (Built since: a durable job queue and worker processes with leases, crash recovery and fair sharing, in `studio/queue.py` and `studio/worker.py`.) |
 | **v6.7** policy | Fetching a page from a new site asks, with what "Always allow" covers spelled out, and two agents wanting the same site share one question; budgets for spend, calls, searches and pages; an audit log of what the team did outside the draft; tool output cannot close its own quote; a draft flagged for real, living people loses the plain Merge and needs an explicit, logged override | Policy for tools beyond fetch; injection tests against real models |
 | **v6.8** evaluation | `python -m tinyworld.eval.studio_bench`: first-pass rate, rework rate, blocked rate, interventions, cost, calls, blocking problems, time, per premise and averaged | Quality judged against a rubric; a nightly run; comparing models |
 
@@ -244,9 +244,15 @@ Goal: readable at a glance, and pleasant.
 
 - Studio runs recorded and replayable: a replay of a build reproduces the draft
   with no model calls.
-- Postgres and a job queue; one worker per studio; resume by task, not by
-  restart of the whole run.
-- Many studios at once on one host, with fair sharing of the model.
+- **Built:** a job queue (`tinyworld/studio/queue.py`) and workers
+  (`python -m tinyworld.studio.worker`). A worker claims a build, keeps a lease
+  alive, and runs the team; a dead worker's build is re-queued and resumes from
+  the last saved task; a build that kills three workers fails. Fair sharing: the
+  next build comes from the tenant with the fewest running, and a cap limits
+  builds running together. `POST /api/studio/queue` and `GET /api/studio/queue`
+  queue and list builds.
+- **Not built:** Postgres. The queue is plain SQL with one atomic claim, so it
+  moves with a driver change and `FOR UPDATE SKIP LOCKED`.
 - **Exit:** kill the process mid-build; it resumes from the last finished task
   with no repeated model calls for finished work.
 
