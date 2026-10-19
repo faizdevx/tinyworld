@@ -9,7 +9,7 @@ from typing import Annotated, Literal, Union
 from pydantic import Field, JsonValue
 
 from tinyworld.core.ids import EntityId, FactId, ProcessId
-from tinyworld.core.state import Commitment, Entity, Fact, Model, PlaceEdge, Process
+from tinyworld.core.state import Commitment, Entity, Fact, Model, PlaceEdge, Process, Region
 
 Channel = Literal["direct", "audible", "public", "written"]
 MessageType = Literal[
@@ -162,12 +162,35 @@ class AdvanceTime(Model):
     minutes: int = Field(gt=0)
 
 
+class Tile(Model):
+    x: int
+    y: int
+    terrain: str = Field(min_length=1, max_length=1)
+
+
+class SetTiles(Model):
+    """Paint terrain and claim rectangles of tiles for places. Chunks appear as they are painted."""
+
+    type: Literal["SetTiles"] = "SetTiles"
+    tiles: list[Tile] = Field(default_factory=list, max_length=4096)
+    regions: list[Region] = Field(default_factory=list, max_length=256)
+
+
+class SetPosition(Model):
+    """Put a person or thing on a tile. Their place becomes the place that owns the tile."""
+
+    type: Literal["SetPosition"] = "SetPosition"
+    entity: EntityId
+    x: int
+    y: int
+
+
 Effect = Annotated[
     Union[
         MoveEntity, TransferItem, ChangeQuantity, SetAttr, CreateEntity,
         RemoveEntity, Kill, SetRelation, SetEdge, AssertFact, RetractFact,
         StartProcess, AdvanceProcess, EndProcess, Utter, SetRule, AdvanceTime,
-        MakeCommitment, ResolveCommitment, LearnKnowledge,
+        MakeCommitment, ResolveCommitment, LearnKnowledge, SetTiles, SetPosition,
     ],
     Field(discriminator="type"),
 ]
@@ -177,5 +200,5 @@ EFFECT_TYPES: tuple[str, ...] = (
     "RemoveEntity", "Kill", "SetRelation", "SetEdge", "AssertFact",
     "RetractFact", "StartProcess", "AdvanceProcess", "EndProcess", "Utter",
     "SetRule", "AdvanceTime", "MakeCommitment", "ResolveCommitment",
-    "LearnKnowledge",
+    "LearnKnowledge", "SetTiles", "SetPosition",
 )

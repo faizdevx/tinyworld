@@ -56,7 +56,8 @@ def cause_graph(
                 for linked in {earlier[0], earlier[-1]} if earlier else ():
                     links.append((linked, "undertaking"))
             born = origin.get(event.actor)
-            if born is not None and born < current and events[born].actor == "god":
+            # A person's first act traces to the event that made them: the god's hand, or a birth.
+            if born is not None and born < current and (events[born].actor == "god" or events[born].causes):
                 links.append((born, "origin"))
             for linked, why in links:
                 edges.append({"from": linked, "to": current, "why": why})

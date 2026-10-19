@@ -28,8 +28,15 @@ Station = Literal[
 ]
 TaskStatus = Literal["todo", "doing", "review", "done", "blocked", "cancelled"]
 TaskKind = Literal["plan", "research", "section", "review", "digest", "custom"]
-DecisionKind = Literal["question", "permission", "merge"]
+DecisionKind = Literal["question", "permission", "merge", "petition"]
 DecisionStatus = Literal["open", "answered", "cancelled"]
+
+# The Town view (v7) adds these to the wire protocol (see api/town_routes.py):
+#   chunk.upsert  one 32 by 32 chunk of terrain and the regions on it, as the map grows
+#   position      every person's tile, batched once per step
+#   petition      the open petitions; each also rides the decision queue as a "petition" decision
+#   edition.add   a newspaper came out
+TOWN_MESSAGES = ("snapshot", "chunk.upsert", "position", "petition", "edition.add")
 
 MERGE_OPTIONS = ["Merge", "Request changes", "Reject"]
 PERMISSION_OPTIONS = ["Allow once", "Always allow", "Deny"]

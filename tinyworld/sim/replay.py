@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from pydantic import TypeAdapter
 
-from tinyworld.core.events import Event, Intent
+from tinyworld.core.events import Event, EventDraft, Intent
 from tinyworld.core.session import WorldSession
 from tinyworld.core.store import Store
 from tinyworld.gm.adjudicator import Adjudicator
@@ -21,7 +21,9 @@ from tinyworld.god.parser import GodCommand
 from tinyworld.llm.router import LLMConfig
 from tinyworld.llm.structured import StructuredLLM
 from tinyworld.llm.trace import ReplayLLM, Tracer
+from tinyworld.llm.types import CallContext
 from tinyworld.sim.budget import Budget
+from tinyworld.sim.clock import advance_world, settle_intents
 from tinyworld.sim.loop import Simulation
 from tinyworld.sim.step import apply_intents
 from tinyworld.sim.timeskip import TimeSkip
@@ -88,9 +90,15 @@ async def replay(
     llm = StructuredLLM(ReplayLLM(store, source_branch), config, Tracer(store, config))
     budget = Budget(store, session.branch_id)
     sim = Simulation(session, llm, budget=budget, **(sim_options or {}))
+    if any(r["op"] == "draw" and '"noise.' in r["args_json"] for r in journal):
+        # The run's far-off senses were unreliable; read the same slips back.
+        from tinyworld.core.entropy import Entropy
+
+        sim.noise = Entropy.replaying(store, source_branch, kinds=("noise.",))
     skipper = TimeSkip(sim)
     god = GodChannel(llm)
 
+    batched: list = []  # observations held back to the end of a window
     for entry in journal:
         args = json.loads(entry["args_json"])
         op = entry["op"]
@@ -110,6 +118,34 @@ async def replay(
         elif op == "budget":
             budget.run_cap = args["run_cap"]
             budget.agent_cap = args["agent_cap"]
+        elif op == "clock":
+            await advance_world(sim, args["minutes"], args["tick_seq"])
+        elif op == "async_intents":
+            held, _ = await settle_intents(
+                sim, _INTENTS.validate_python(args["intents"]), args["tick_seq"], args.get("causes"),
+                remember=False, scenes=args.get("scenes", True),
+            )
+            batched.extend(held.observations)
+        elif op == "window_end":
+            if batched and not args.get("drop"):
+                await sim.remember(batched, args["tick_seq"])
+            batched = []
+        elif op == "drafts":
+            drafts = [EventDraft.model_validate(d) for d in args["drafts"]]
+            events = session.commit(drafts, atomic=False).events
+            if events and args.get("notes"):
+                sim.write_notes([tuple(n) for n in args["notes"]], events[-1].seq, 0.8)
+            if events and args.get("beliefs"):
+                from tinyworld.sim.town import write_beliefs
+
+                write_beliefs(sim, [tuple(b) for b in args["beliefs"]])
+        elif op == "town_intents":
+            gm = GameMaster(Adjudicator(llm), seed=session.world_id)
+            step = await apply_intents(
+                session, gm, _INTENTS.validate_python(args["intents"]),
+                CallContext(session.branch_id, args["tick_seq"]),
+            )
+            await sim.remember(step.observations, args["tick_seq"])
         elif op == "intents":
             gm = GameMaster(Adjudicator(llm), seed=session.world_id)
             await apply_intents(session, gm, _INTENTS.validate_python(args["intents"]))

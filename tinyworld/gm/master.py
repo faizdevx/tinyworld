@@ -39,6 +39,11 @@ def outcome_draft(state: WorldState, outcome: Outcome) -> EventDraft | None:
             narration = f"{agent.name} tries to {intent.verb.value} but fails."
         else:
             narration = f"{agent.name} does something."
+    effects = list(outcome.effects)
+    from tinyworld.world import walking
+
+    if intent.verb.value != "move":
+        effects += walking.stop_effects(agent)
     only_speech = bool(outcome.effects) and all(
         isinstance(effect, fx.Utter) for effect in outcome.effects
     )
@@ -46,7 +51,7 @@ def outcome_draft(state: WorldState, outcome: Outcome) -> EventDraft | None:
         kind="utterance" if only_speech else "action",
         actor=intent.agent,
         location=agent.location,
-        effects=list(outcome.effects),
+        effects=effects,
         narration=narration,
         loud=outcome.loud,
         trace_id=outcome.trace_id,
@@ -65,19 +70,31 @@ class GameMaster:
         self.registry = registry
         self.seed = seed
 
-    def _apply(self, working: WorldState, outcome: Outcome) -> Outcome:
-        """Apply a rule-resolved outcome to the working state, or fail it."""
-        backup = working.model_copy(deep=True)
+    def _apply(self, working: WorldState, outcome: Outcome, base: WorldState | None = None, applied: list | None = None) -> Outcome:
+        """Apply a rule-resolved outcome to the working state, or fail it.
+
+        Copying the whole world before every outcome is the dearest thing a tick does, so a failure
+        is undone the other way round: start again from ``base`` and re-apply what had succeeded.
+        """
+        done = 0
         try:
             for effect in outcome.effects:
                 apply_effect(working, effect, self.registry)
+                done += 1
         except EffectError as exc:
+            if base is None:
+                raise
+            fresh = base.model_copy(deep=True)
+            for earlier in applied or []:
+                apply_effect(fresh, earlier, self.registry)
             # Restore in place: later intents keep using the same object.
             for name in type(working).model_fields:
-                setattr(working, name, getattr(backup, name))
+                setattr(working, name, getattr(fresh, name))
             return outcome.model_copy(
                 update={"status": "impossible", "effects": [], "reason": str(exc)}
             )
+        if applied is not None:
+            applied.extend(outcome.effects)
         return outcome
 
     async def resolve(
@@ -97,6 +114,7 @@ class GameMaster:
         seeded(self.seed, context.tick_seq).shuffle(order)
 
         working = state.model_copy(deep=True)
+        applied: list = []
         outcomes: dict[int, Outcome] = {}
         pending: dict[int, list] = {}
 
@@ -104,7 +122,7 @@ class GameMaster:
             intent = intents[index]
             verdict = rules.check(working, intent)
             if verdict.status == "resolved":
-                outcomes[index] = self._apply(working, verdict.outcome)
+                outcomes[index] = self._apply(working, verdict.outcome, state, applied)
             elif verdict.status == "impossible":
                 outcomes[index] = verdict.outcome
             else:

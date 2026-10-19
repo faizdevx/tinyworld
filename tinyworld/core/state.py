@@ -23,8 +23,34 @@ _COMMITMENT_ID = re.compile(r"^commitment:[a-z0-9][a-z0-9_]*$")
 EntityKind = Literal["person", "place", "item", "org", "faction", "resource"]
 
 
+def _copy_value(value):
+    """A deep copy of JSON-like data and nested models, much faster than ``copy.deepcopy``."""
+    kind = type(value)
+    if kind is dict:
+        return {k: _copy_value(v) for k, v in value.items()}
+    if kind is list:
+        return [_copy_value(v) for v in value]
+    if kind in (str, int, float, bool, type(None)):
+        return value
+    if isinstance(value, BaseModel):
+        return value.__deepcopy__()
+    if kind is tuple:
+        return tuple(_copy_value(v) for v in value)
+    if kind is set:
+        return {_copy_value(v) for v in value}
+    import copy
+
+    return copy.deepcopy(value)
+
+
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    def __deepcopy__(self, memo=None):
+        # World state is copied on every commit; pydantic's generic deep copy was the dearest thing
+        # the simulation did. Fields here are JSON-like, so copy them directly.
+        cls = type(self)
+        return cls.model_construct(**{name: _copy_value(getattr(self, name)) for name in cls.model_fields})
 
 
 class Entity(Model):
@@ -99,6 +125,8 @@ class Process(Model):
     outcome: Fact | None = None
     # An idea this undertaking sets out to work out; its workers learn it.
     teaches: str | None = None
+    # A building this undertaking puts up when it is finished (on a tile map).
+    builds: str | None = None
 
     @model_validator(mode="after")
     def _valid_id(self):
@@ -135,6 +163,56 @@ class Commitment(Model):
         return self
 
 
+CHUNK = 32
+GROUND, ROAD, WATER, WALL, FLOOR, DOOR, FIELD = ".", "=", "~", "#", ",", "+", '"'
+TERRAIN = {GROUND: "ground", ROAD: "road", WATER: "water", WALL: "wall", FLOOR: "floor", DOOR: "door", FIELD: "field"}
+WALKABLE = frozenset({GROUND, ROAD, FLOOR, DOOR, FIELD})
+
+
+class Region(Model):
+    """A rectangle of tiles (both corners included) that belongs to a place."""
+
+    place: EntityId
+    x0: int
+    y0: int
+    x1: int
+    y1: int
+
+    @model_validator(mode="after")
+    def _ordered(self):
+        if self.x1 < self.x0 or self.y1 < self.y0:
+            raise ValueError("a region's far corner comes after its near corner")
+        return self
+
+    def has(self, x: int, y: int) -> bool:
+        return self.x0 <= x <= self.x1 and self.y0 <= y <= self.y1
+
+    # A region is never changed once made (a new one replaces it), so copies of a world can share it.
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo=None):
+        return self
+
+
+class Chunk(Model):
+    """32 by 32 tiles: one character of terrain each, and the places they belong to."""
+
+    terrain: str = Field(default_factory=lambda: GROUND * (CHUNK * CHUNK))
+    # Later regions win where they overlap (a building inside a street block).
+    regions: list[Region] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _size(self):
+        if len(self.terrain) != CHUNK * CHUNK or any(c not in TERRAIN for c in set(self.terrain)):
+            raise ValueError("a chunk is 32 by 32 tiles of known terrain")
+        return self
+
+    def __deepcopy__(self, memo=None):
+        # The terrain is one immutable string and the regions are shared: copying a world is cheap.
+        return Chunk.model_construct(terrain=self.terrain, regions=list(self.regions))
+
+
 class WorldState(Model):
     sim_time: datetime
     entities: dict[EntityId, Entity] = Field(default_factory=dict)
@@ -144,6 +222,9 @@ class WorldState(Model):
     processes: dict[ProcessId, Process] = Field(default_factory=dict)
     commitments: dict[str, Commitment] = Field(default_factory=dict)
     rules: dict[str, JsonValue] = Field(default_factory=dict)
+    # The tile world, by chunk "cx,cy". Empty for worlds that are only a place graph.
+    grid: dict[str, Chunk] = Field(default_factory=dict)
+    grid_rev: int = 0
     seq: int = 0
 
     # -- queries ---------------------------------------------------------

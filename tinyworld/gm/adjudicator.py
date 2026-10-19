@@ -180,6 +180,11 @@ class Adjudicator:
                 f"{round(process.progress * 100)}% done"
             )
         lines += ["", "Known facts:", ctx.describe_facts(state, public_only=False)]
+        from tinyworld.world import laws
+
+        bearing = laws.prompt_lines(state, intent)
+        if bearing:
+            lines += ["", "Laws in force that this action runs up against (decide what follows):"] + bearing
         return "\n".join(lines)
 
     @staticmethod

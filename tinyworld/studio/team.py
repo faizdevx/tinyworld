@@ -1065,6 +1065,13 @@ class Foreman:
             question = str(args.get("question", "")).strip()
             if not question:
                 return "give a question"
+            options_given = [o for o in (args.get("options") or []) if str(o).strip()]
+            if task.kind in ("section", "digest") and not options_given:
+                # "What are the key institutions?" is the writer's own job.
+                return (
+                    "Writing this section is your job: decide what it contains. Ask the user "
+                    "only to choose between options you give, and only if the choice is theirs."
+                )
             if PROCESS_QUESTION.search(question):
                 return (
                     "That is a question about how the team works, which is yours to decide. "
@@ -1243,8 +1250,8 @@ class Foreman:
             return
         # Bookkeeping first, by rule and in the open: undefined resources, homes
         # that are not places, links to nowhere.
-        if not self._repaired:
-            self._repaired = True
+        # Every time: a fix round can break what the last repair mended.
+        if True:
             from tinyworld.studio.repair import repair
 
             fixed, repairs = repair(studio.data.draft)
@@ -1261,7 +1268,7 @@ class Foreman:
                     if studio.data.draft_version:
                         bibles.put_at(self.world_id, studio.data.draft_version, section, valid)
                     studio.emit("draft.upsert", section=section)
-                self._repairs = repairs
+                self._repairs = self._repairs + repairs
                 studio.save()
                 studio.say(
                     f"Repaired {len(repairs)} bookkeeping problem(s) by rule: "

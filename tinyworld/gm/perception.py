@@ -149,6 +149,12 @@ def perceive(event: Event, state: WorldState) -> list[Observation]:
     for effect in event.effects:
         if isinstance(effect, fx.MoveEntity) and effect.to not in scenes:
             scenes.append(effect.to)  # an arrival is seen where it ends
+        if isinstance(effect, fx.SetPosition):
+            from tinyworld.world import grid as tiles
+
+            ends = tiles.place_at(state, effect.x, effect.y)
+            if ends and ends not in scenes:
+                scenes.append(ends)
     if not scenes:
         return list(found.values())
 
@@ -196,7 +202,69 @@ def perceive(event: Event, state: WorldState) -> list[Observation]:
                         participants=[],
                     )
                 )
+    if state.grid and actor is not None and actor.kind == "person":
+        from tinyworld.world import grid as tiles
+
+        where = tiles.position_of(actor)
+        if where is not None:
+            for person in living:
+                if person.id in found:
+                    continue
+                there = tiles.position_of(person)
+                if there is None:
+                    continue
+                if tiles.sees(state, where, there):
+                    if utterances:
+                        if tiles.hears(state, where, there, loud):
+                            add(observation(person.id, "auditory", CONFIDENCE["seen_from_afar"]))
+                        else:
+                            add(
+                                observation(
+                                    person.id, "visual", CONFIDENCE["seen_from_afar"],
+                                    text=f"{name_of(state, event.actor)} is talking at {place_name}.",
+                                    claims=[],
+                                )
+                            )
+                    else:
+                        add(observation(person.id, "visual", CONFIDENCE["seen_from_afar"]))
+                elif loud and tiles.hears(state, where, there, True):
+                    add(
+                        observation(
+                            person.id, "auditory", CONFIDENCE["heard_from_afar"],
+                            text=f"A commotion is heard from {place_name}.",
+                            participants=[],
+                        )
+                    )
     return list(found.values())
+
+
+NOISE_KIND = "noise."
+
+
+def distort(observation: Observation, noise) -> Observation:
+    """Something heard or seen from afar is sometimes taken wrongly.
+
+    Mishearing drops or garbles a word or two of what was said; seeing from a distance loses the
+    detail after the first clause. Close and certain observations are left alone. Every draw is
+    recorded by ``noise`` (an ``Entropy``), so a replay reads the same slips back.
+    """
+    if observation.confidence >= 0.9 or observation.mode == "self":
+        return observation
+    p = 0.4 if observation.mode == "auditory" else 0.25
+    if not noise.chance(NOISE_KIND + "happens", p):
+        return observation
+    text = observation.text
+    if observation.mode == "auditory":
+        words = text.split()
+        if len(words) >= 4:
+            at = noise.randint(NOISE_KIND + "word", 1, len(words) - 2)
+            words[at] = "..." if noise.chance(NOISE_KIND + "lost", 0.6) else words[at][::-1] if len(words[at]) > 3 else "..."
+            text = " ".join(words)
+    else:
+        cut = min((i for i in (text.find(","), text.find(";"), text.find(" and ")) if i > 0), default=-1)
+        if cut > 0:
+            text = text[:cut] + "."
+    return observation.model_copy(update={"text": text, "confidence": round(observation.confidence * 0.85, 3)})
 
 
 def limit_attention(observations: list[Observation], limit: int) -> list[Observation]:

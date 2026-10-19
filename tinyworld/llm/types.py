@@ -23,6 +23,8 @@ class LLMRequest:
     schema_name: str = "response"
     stable_context: str = ""
     max_tokens: int = 4000
+    # Sampling temperature; None leaves the provider's default.
+    temperature: float | None = None
     context: CallContext = field(default_factory=lambda: CallContext("none"))
 
 

@@ -111,6 +111,7 @@ def begin(
         ),
         work_minutes=max(60, int(days * WORK_DAY_MINUTES)),
         teaches=teaches,
+        builds=str(args.get('builds'))[:60] if args.get('builds') else None,
     )
     narration = f"{agent.name} sets out to {name}."
     if teaches:
@@ -132,6 +133,21 @@ def completion_effects(state: WorldState, process: Process, worker: Entity) -> l
     out: list = []
     if process.outcome is not None:
         out.append(fx.AssertFact(fact=process.outcome))
+    if process.builds and state.grid:
+        from tinyworld.genesis import layout
+
+        owner = state.entities.get(process.owner)
+        site = state.entities.get(process.location) if process.location else None
+        if owner is not None:
+            near = None
+            if site is not None:
+                from tinyworld.world import grid
+
+                regions = grid.regions_of(state, site.id)
+                if regions:
+                    r = regions[0]
+                    near = ((r.x0 + r.x1) // 2, (r.y0 + r.y1) // 2)
+            out += layout.build_near(state, owner, process.builds, near=near or None)
     if not process.teaches:
         return out
     graph = knowledge.ideas(state)

@@ -20,6 +20,26 @@ institutions and factions, scarce things and live tensions. Then it runs.
 
 Contents: [How well it works](#how-well-it-works) · [What you can do](#what-you-can-do-with-it) · [System design](#system-design) · [Roadmap](#roadmap) · [Running it](#running-it)
 
+## v7: the living town
+
+The world is a place you can see, and the people in it live on their own clocks. They walk real
+paths between buildings, see each other across a street and start talking, walk to the edge of the
+known ground and make the map grow, come to a shrine to ask you for something, marry, have children,
+grow old and leave their goods to an heir. A paper comes out each day. You can follow anyone, ask them
+what they remember, run the same world twenty times and see what changes, and share it with a
+demigod and a god with a goal of their own.
+
+<p>
+<img src="docs/images/v7-town-follow.jpg" width="49%" alt="The Town view: a person selected, their plan, wants and memories beside the map">
+<img src="docs/images/v7-town-petitions.jpg" width="49%" alt="A petition at the podium, with six powers to answer it">
+</p>
+
+Behaviour is stochastic; storage is a recording. Chance comes from the operating system and every
+draw is written down, so two live runs differ and a replay of either is identical to it. What each
+phase does, what it was checked against and what is not done (Postgres; human labels for the judges;
+a long live run on a hosted model) is in [docs/V7_STATUS.md](docs/V7_STATUS.md), against
+[the plan](docs/V7_PLAN.md). Open any world's **Town view** from its page.
+
 ## v6: the studio
 
 You do not just watch a world any more. You give a goal, and a **team of agents
@@ -37,6 +57,13 @@ nothing until you press **Merge**. Then the residents live in it.
 <p>
 <img src="docs/images/v6-studio-partial.jpg" width="49%" alt="Part merged, a section sent back to the team">
 <img src="docs/images/v6-studio-merged.jpg" width="49%" alt="Merged, with the audit log of what the team did">
+</p>
+
+A real build, on Qwen 2.5 7B running locally (Lucknow, 1857):
+
+<p>
+<img src="docs/images/live-lucknow-tasks.jpg" width="49%" alt="The live Lucknow build's tasks">
+<img src="docs/images/live-lucknow-world.jpg" width="49%" alt="The merged Lucknow world, running">
 </p>
 
 - **A cast, each with a job.** Marlow leads and plans. Iris and Ash research.
@@ -95,7 +122,7 @@ has now had **two short live probes on an open-weight model** (Nemotron 3 Super
 problems: a researcher that never stopped searching, and a section reply cut off
 mid-JSON. Both are fixed and the fixes are tested, but the free daily quota ran
 out before a full build could be run live, so **a complete live build has still
-not happened**. Postgres and workers are not built. Details, step by step, are in
+not happened** on a hosted model (it has on a local one, below). A durable job queue and worker processes are built (`python -m tinyworld.studio.worker`); Postgres is not. Details, step by step, are in
 [docs/V6_PLAN.md](docs/V6_PLAN.md#the-first-live-runs). The design follows
 [AgentCraft](https://github.com/blendi-remade/agentcraft): a foreman that owns
 the truth, a view that holds none, agents that use tools, a decision queue, and
@@ -116,7 +143,7 @@ only been shown on scripted stand-ins, and what is not built.
 | Days that run on routine | **Works with scripted agents** | Offline Berlin demo, 39 simulated hours, 10 people: model calls per simulated day 1,140 down to 460 to 530. |
 | Conversations and promises | **Works with scripted agents** | 22 of 22 promises kept over four offline runs (1 of 10 before the fix). This shows the mechanism, not that a model keeps promises. |
 | Knowledge and projects | **Works, covered by tests**, never seen live | A person can start a project, a discovery needs its foundations, finishing teaches the workers. |
-| Open-weight models (any OpenAI-compatible server: vLLM, Ollama, llama.cpp) | **Built (v4), tested against a simulated server only** | Request shape, constraint step-down, reasoning-block stripping, adaptive concurrency and error handling are tested. It has **not** been run against a real vLLM or Ollama server. |
+| Open-weight models (any OpenAI-compatible server: vLLM, Ollama, llama.cpp) | **Runs live: three full studio builds** | Qwen2.5-7B-Instruct Q4 on llama.cpp, a 4 GB laptop GPU: Lucknow, Gandhi's India and a Mars colony each went from plan to merge with no person, 112 to 140 calls and about 50 minutes each. Details in [docs/V6_PLAN.md](docs/V6_PLAN.md#three-full-builds-on-a-local-open-weight-model). Not yet run on vLLM or Ollama. |
 | Research agent with web search | **Built (v4)**, web search works live | DuckDuckGo returned results and page text with no key. The read, find gaps, search again loop is tested with a scripted model, not yet run live end to end. |
 | Genesis in parallel waves | **Built (v4)**, measured on a simulated delay | 13 calls either way; with 0.25 s per call, 3.40 s sequential against 2.09 s in waves. Not timed on a real model. |
 | Real people in a bible | **Guarded by the reviewer (v4)**, not seen live | The reviewer prompt and the figures brief now forbid living public figures, and a `real_person` finding blocks and triggers a redraft. Tested with a scripted reviewer. |
@@ -354,7 +381,8 @@ system role an agent that can use tools.
 | Fine-tune and serve a small model for routine calls, and check it against the judge | Not done |
 | Constrained decoding (grammar) for weak models | Partly: the schema is sent as `json_schema`, then `guided_json`, then `json_object` |
 | Parallel time skips (one call per person per year) | Not done |
-| Postgres, a job queue, one worker per branch, sign-in | Not done |
+| Job queue and worker processes (lease, crash recovery, fair sharing between tenants, cap on running builds) | **Built, tested with the scripted team** |
+| Postgres, sign-in | Not done. The queue is plain SQL on the same SQLite store, so the move is a driver change. |
 | A live benchmark across premises and seeds | Not done |
 
 **Ends when:** a world is built and run end to end on open-weight models only,

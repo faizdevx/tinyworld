@@ -300,3 +300,16 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .grow { flex: 1; }
 .small { font-size: 12px; }
 button.ghost.small { padding: 2px 8px; }
+
+/* The Town */
+.town { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 10px; padding: 10px; height: calc(100vh - 70px); min-height: 480px; }
+.town-map { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.town-bar { flex-wrap: wrap; align-items: center; gap: 8px; }
+.town-stage { position: relative; flex: 1; min-height: 320px; }
+.town-canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: var(--radius); border: 1px solid var(--line); cursor: grab; touch-action: none; background: #14161a; }
+.town-canvas:active { cursor: grabbing; }
+.town-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.town-body { padding: 12px; overflow: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.town-scrub { flex: 1; min-width: 120px; }
+.town-graph { width: 100%; max-width: 340px; background: var(--soft); border-radius: var(--radius); }
+@media (max-width: 900px) { .town { grid-template-columns: 1fr; height: auto; } .town-panel { max-height: 60vh; } }

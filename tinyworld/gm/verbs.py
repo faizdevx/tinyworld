@@ -3,7 +3,7 @@
 from tinyworld.core.events import Verb
 
 # Resolved by rules alone when their preconditions hold.
-RULE_RESOLVED = frozenset({Verb.MOVE, Verb.SPEAK, Verb.GIVE, Verb.WAIT, Verb.REST})
+RULE_RESOLVED = frozenset({Verb.MOVE, Verb.SPEAK, Verb.GIVE, Verb.WAIT, Verb.REST, Verb.PETITION, Verb.EXPLORE, Verb.FOUND, Verb.DISSOLVE, Verb.SPLIT, Verb.DECREE, Verb.LEND, Verb.REPAY})
 
 # Verbs whose target has to be within reach of the actor.
 NEEDS_REACH = frozenset({Verb.TAKE, Verb.TRADE, Verb.USE, Verb.ATTACK, Verb.GIVE})
@@ -18,4 +18,5 @@ DEFAULT_MINUTES = {
     Verb.WAIT: 15,
     Verb.REST: 60,
     Verb.WORK: 60,
+    Verb.PETITION: 5,
 }

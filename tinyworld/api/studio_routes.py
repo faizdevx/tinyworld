@@ -127,6 +127,31 @@ def install(app: FastAPI, the_hub) -> None:
         foreman.submit(goal, budget=request.budget)
         return {"world_id": world_id, "backend": "model" if hub.llm is not None else "sim"}
 
+    @app.post("/api/studio/queue")
+    async def enqueue_build(request: GoalRequest, tenant: str = "default") -> dict:
+        """Queue a build for a worker process (python -m tinyworld.studio.worker) instead of running it here."""
+        from tinyworld.studio.queue import JobQueue
+
+        goal = request.goal.strip()
+        if not goal:
+            raise HTTPException(status_code=422, detail="A goal is needed.")
+        hub = the_hub()
+        world_id = hub.store.create_world(goal, datetime(2000, 1, 1, 8))
+        queue = JobQueue(hub.store)
+        queue.enqueue(world_id, goal, tenant=tenant, auto=request.auto, budget=request.budget)
+        return {"world_id": world_id, "position": queue.position(world_id)}
+
+    @app.get("/api/studio/queue")
+    async def build_queue() -> list[dict]:
+        from tinyworld.studio.queue import JobQueue
+
+        queue = JobQueue(the_hub().store)
+        return [
+            {"world_id": j.world_id, "tenant": j.tenant, "status": j.status, "worker": j.owner,
+             "attempts": j.attempts, "goal": j.payload.get("goal", ""), "error": j.error}
+            for j in queue.all()
+        ]
+
     @app.post("/api/studio/{world_id}/goal")
     async def new_goal(world_id: str, request: GoalRequest) -> dict:
         """A new goal on a world that exists: it changes the world, it does not rebuild it."""

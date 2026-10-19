@@ -91,6 +91,7 @@ export async function showWorld(view, branchId) {
       location.hash = `#/branch/${fork.branch_id}`;
     }, { class: "ghost", title: "Branch the timeline here" }),
     el("a", { class: "button ghost", href: `#/branch/${branchId}/history` }, "History"),
+    el("a", { class: "button ghost", href: `#/town/${branchId}` }, "Town view"),
     el("a", { class: "button ghost", href: `#/world/${world.id}` }, "World"));
 
   function renderStatus() {

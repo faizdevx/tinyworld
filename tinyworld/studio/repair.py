@@ -47,6 +47,15 @@ def repair(draft: dict) -> tuple[dict, list[str]]:
     out = copy.deepcopy(draft)
     notes: list[str] = []
     geography = out.get("geography") or {}
+    # A model sometimes leaks JSON into a name ("resources: []}}}, "): not a place.
+    junk = [
+        p for p in geography.get("places", [])
+        if isinstance(p, dict) and any(c in str(p.get("name", "")) for c in "{}[]")
+    ]
+    for p in junk:
+        notes.append(f"geography: dropped a place whose name is not a name ({str(p.get('name'))[:30]!r})")
+    if junk and isinstance(geography.get("places"), list):
+        geography["places"] = [p for p in geography["places"] if p not in junk]
     places = [p for p in geography.get("places", []) if isinstance(p, dict) and p.get("name")]
     place_names = [p["name"] for p in places]
 
@@ -62,13 +71,22 @@ def repair(draft: dict) -> tuple[dict, list[str]]:
                 notes.append(f"geography: dropped a link from {place['name']} to {target!r}")
         place["connects_to"] = kept
     if len(places) >= 2:
-        linked = {p["name"] for p in places if p.get("connects_to")} | {
-            link["to"] for p in places for link in p.get("connects_to", [])
-        }
-        for place in places[1:]:
-            if place["name"] not in linked:
-                place.setdefault("connects_to", []).append({"to": places[0]["name"], "travel_minutes": 10})
-                notes.append(f"geography: connected {place['name']} to {places[0]['name']}")
+        # Every group of places that can reach each other, joined to the first group.
+        from tinyworld.genesis.critic import connected_components
+
+        edges = [
+            (_slug(p["name"]), _slug(link["to"]))
+            for p in places for link in p.get("connects_to", [])
+        ]
+        by_slug = {_slug(p["name"]): p for p in places}
+        groups = connected_components(sorted(by_slug), edges)
+        hub = places[0]
+        for group in groups:
+            if _slug(hub["name"]) in group:
+                continue
+            first = next(p for p in places if _slug(p["name"]) in group)
+            first.setdefault("connects_to", []).append({"to": hub["name"], "travel_minutes": 10})
+            notes.append(f"geography: connected {first['name']} to {hub['name']}")
 
     economy = out.get("economy")
     resources = (economy or {}).get("resources", []) if economy is not None else []

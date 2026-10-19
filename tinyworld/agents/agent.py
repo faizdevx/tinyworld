@@ -37,8 +37,14 @@ Actions (verb, then what to fill in):
 - take: target = holder id (omit to take from the place you are in); args = {"item": id, "quantity": n}
 - work: target = an ongoing work id, or leave empty and describe the work in `text`
 - start: begin a long undertaking of your own. text = the goal; args = {"name": ..., \
-"days": n, "items": {id: n}, "helpers": [person ids], "idea": idea id, only to work out \
+"days": n, "items": {id: n}, "helpers": [person ids], "builds": a building to put up (on a map), "idea": idea id, only to work out \
 a new idea}
+- petition: bring a need to the god. text = what you ask; args = {"kind": prayer | request | accusation | plea | bargain, "offering": what you give, optional}. Do this only when it matters to you and nothing else you can do will help
+- explore: walk to the edge of the known ground and look beyond. args = {"direction": "north" | "south" | "east" | "west"}
+- found: start a group. text = its aims; args = {"name": ...}. dissolve: end a group you lead (target = group). split: leave a group with followers and start another (target = group; args = {"name": ..., "followers": [person ids]})
+- decree: a leader with authority makes a law. text = the law; args = {"kind": "ban" | "curfew" | "tax", "verb": the banned action, "from": hour, "to": hour, "rate": 0.1}
+- lend / repay: target = the other person; args = {"item": id, "quantity": n}
+- sell: sell a place you own. target = buyer; args = {"place": id, "price": n, "item": the money's id}
 - trade, use, make, attack, join, leave, other: target if any; describe it in `text`
 - rest, wait: nothing else needed
 
@@ -46,6 +52,13 @@ You may also `say` something while doing any other action.
 Use ids exactly as shown in [brackets], including the part before the colon (for example place:market_square, never just market_square). `text` is your own short account of what \
 you are trying to do and why; the referee reads it.
 `plan` is your next few intended steps, in order. Send a new plan only when it changes."""
+
+
+def temperature_of(agent_id: str) -> float:
+    """A fixed sampling temperature for each person, 0.6 to 1.0: some are steadier than others."""
+    import hashlib
+
+    return round(0.6 + 0.4 * (hashlib.sha1(agent_id.encode()).digest()[0] / 255), 2)
 
 
 def daypart(hour: int) -> str:
@@ -245,8 +258,9 @@ class Agent:
         if Planner.should_reconsider(plan, [m.importance for m in new]):
             lines.append("Something has changed or you have no plan: reconsider it.")
 
-        from tinyworld.world import projects
+        from tinyworld.world import drives, projects
 
+        lines += drives.lines_for(entity)
         lines += projects.lines_for(state, entity)
         if promises:
             lines += ["", "Promises outstanding:"] + promises
@@ -307,6 +321,7 @@ class Agent:
             context=context,
             fallback=Decision(verb=Verb.WAIT, text="unsure what to do"),
             max_tokens=1500,
+            temperature=temperature_of(entity.id),
             check=check,
         )
         decision = canonical(state, reply.value)

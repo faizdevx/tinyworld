@@ -73,6 +73,8 @@ def apply_effect(
             raise EffectError("places cannot be moved")
         _place(state, effect.to)
         entity.location = effect.to
+        if state.grid and entity.kind == "person":
+            _arrive(state, entity, effect.to)
 
     elif isinstance(effect, fx.TransferItem):
         _holdable(state, effect.item)
@@ -254,8 +256,80 @@ def apply_effect(
     elif isinstance(effect, fx.AdvanceTime):
         state.sim_time = state.sim_time + timedelta(minutes=effect.minutes)
 
+    elif isinstance(effect, fx.SetTiles):
+        _set_tiles(state, effect)
+
+    elif isinstance(effect, fx.SetPosition):
+        _set_position(state, effect)
+
     else:
         raise EffectError(f"unsupported effect: {type(effect).__name__}")
+
+
+def _set_tiles(state: WorldState, effect) -> None:
+    import hashlib
+
+    from tinyworld.core.state import CHUNK, TERRAIN, Chunk
+
+    for tile in effect.tiles:
+        if tile.terrain not in TERRAIN:
+            raise EffectError(f"unknown terrain {tile.terrain!r}")
+    for region in effect.regions:
+        _place(state, region.place)
+    painted: dict[str, list[str]] = {}
+    for tile in effect.tiles:
+        key = f"{tile.x // CHUNK},{tile.y // CHUNK}"
+        chunk = state.grid.get(key)
+        painted.setdefault(key, list(chunk.terrain if chunk else Chunk().terrain))
+        painted[key][(tile.y % CHUNK) * CHUNK + (tile.x % CHUNK)] = tile.terrain
+    for key, cells in painted.items():
+        chunk = state.grid.get(key) or Chunk()
+        state.grid[key] = chunk.model_copy(update={"terrain": "".join(cells)})
+    for region in effect.regions:
+        # A region is kept in every chunk it touches, so a lookup needs one chunk only.
+        for cy in range(region.y0 // CHUNK, region.y1 // CHUNK + 1):
+            for cx in range(region.x0 // CHUNK, region.x1 // CHUNK + 1):
+                key = f"{cx},{cy}"
+                chunk = state.grid.get(key) or Chunk()
+                state.grid[key] = chunk.model_copy(update={"regions": [*chunk.regions, region.model_copy()]})
+    digest = hashlib.sha1(f"{state.grid_rev}|{effect.model_dump_json()}".encode()).hexdigest()
+    state.grid_rev = int(digest[:12], 16)
+
+
+def _set_position(state: WorldState, effect) -> None:
+    from tinyworld.world import grid
+
+    entity = _entity(state, effect.entity)
+    if entity.kind == "place":
+        raise EffectError("places cannot be moved")
+    if not state.grid:
+        raise EffectError("this world has no tile map")
+    terrain = grid.terrain_at(state, effect.x, effect.y)
+    if terrain is None:
+        raise EffectError(f"({effect.x}, {effect.y}) has not been generated")
+    if not grid.walkable(state, effect.x, effect.y):
+        raise EffectError(f"({effect.x}, {effect.y}) cannot be walked on")
+    place = grid.place_at(state, effect.x, effect.y)
+    if place is None:
+        raise EffectError(f"({effect.x}, {effect.y}) belongs to no place")
+    before = grid.position_of(entity)
+    if before is not None and grid.distance(before, (effect.x, effect.y)) > grid.MAX_STEP:
+        raise EffectError("that is too far to walk in one go")
+    entity.attrs["x"] = effect.x
+    entity.attrs["y"] = effect.y
+    entity.location = place
+
+
+def _arrive(state: WorldState, entity, place: str) -> None:
+    """On a tile map a person who is moved to a place stands somewhere in it."""
+    from tinyworld.world import grid
+
+    spot = grid.entrance(state, place, grid.occupied(state) - {grid.position_of(entity)})
+    if spot is None:
+        entity.attrs.pop("x", None)
+        entity.attrs.pop("y", None)
+    else:
+        entity.attrs["x"], entity.attrs["y"] = spot
 
 
 def end_time(state: WorldState, effects: Iterable):

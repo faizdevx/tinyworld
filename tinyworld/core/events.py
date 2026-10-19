@@ -58,6 +58,15 @@ class Verb(str, Enum):
     WAIT = "wait"
     JOIN = "join"
     LEAVE = "leave"
+    PETITION = "petition"
+    EXPLORE = "explore"
+    FOUND = "found"
+    DISSOLVE = "dissolve"
+    SPLIT = "split"
+    DECREE = "decree"
+    LEND = "lend"
+    REPAY = "repay"
+    SELL = "sell"
     OTHER = "other"
 
 

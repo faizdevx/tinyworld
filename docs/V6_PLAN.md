@@ -104,7 +104,7 @@ it does not mean a model drives it well.
 | **v6.3** residents join | Residents who deliberate run a short tool session (look around, recall, check promises and undertakings, then decide), checked by the same rules and replayable; a Town tab lists the seeded world's people; the console and API can ask the team for a change on a built world | The studio and the live map as one view |
 | **v6.4** the scene | A tiled studio with rooms, walls and doorways; pixel characters with their own hair, skin and colour, two walking frames, walking A* paths between stations; furniture that shows state (a card per task on the wall, a paper per section on the drafting table, a lit podium when you are needed); speech bubbles; day and night from your clock; a command console (`@name`, `/answer`, `/status`, `/pause`, `/resume`, `/stop`, `/spawn`, `/budget`, `/help`) with name completion; agent cards with pause, stop, message and cost; a title badge and desktop notification when a decision waits | Hand-drawn art; sound |
 | **v6.5** talking and steering | `send_message` between agents, delivered at the recipient's next step even mid-task; the same for your messages; editable shared notes; one agent can run on a different model from the rest | Mixed hosted and open-weight teams run live |
-| **v6.6** durability | A recorded build (model replies, searches, pages, your answers) replays with no model, no web and no user, and gives the same draft; a stopped build resumes without redoing finished tasks, and a running one restarts on server start | Postgres, a job queue, one worker per studio, fair sharing between studios |
+| **v6.6** durability | A recorded build (model replies, searches, pages, your answers) replays with no model, no web and no user, and gives the same draft; a stopped build resumes without redoing finished tasks, and a running one restarts on server start | Postgres. (Built since: a durable job queue and worker processes with leases, crash recovery and fair sharing, in `studio/queue.py` and `studio/worker.py`.) |
 | **v6.7** policy | Fetching a page from a new site asks, with what "Always allow" covers spelled out, and two agents wanting the same site share one question; budgets for spend, calls, searches and pages; an audit log of what the team did outside the draft; tool output cannot close its own quote; a draft flagged for real, living people loses the plain Merge and needs an explicit, logged override | Policy for tools beyond fetch; injection tests against real models |
 | **v6.8** evaluation | `python -m tinyworld.eval.studio_bench`: first-pass rate, rework rate, blocked rate, interventions, cost, calls, blocking problems, time, per premise and averaged | Quality judged against a rubric; a nightly run; comparing models |
 
@@ -126,6 +126,50 @@ from probe 2 have not been tried live yet. The ideas behind several fixes come
 from AgentCraft's prompts: a numbered procedure for each job, "when done, end
 your turn", answered questions kept with the task so a retry does not ask again,
 and a hand-over that continues from saved work instead of starting over.
+
+### Three full builds on a local open-weight model
+
+Then the whole studio ran end to end on a laptop: **Qwen2.5-7B-Instruct**
+(Q4_K_M) under llama.cpp's `llama-server` on an RTX 3050 with 4 GB
+(`-ngl 16 -c 12288 -np 1 --cache-type-k q8_0 --cache-type-v q8_0 -fa on --jinja`,
+about 7 tokens a second), `LOCAL_CONCURRENCY=1`, auto mode, live web search.
+Every build ran from the first plan to the merge with no person answering.
+
+| Premise | Result | Calls | Time | Blocking problems at merge | What the world had |
+|---|---|---|---|---|---|
+| Lucknow, 1857 | Merged; trial run passed | 140 | 52 min | 13 | 7 places (some outside Lucknow), 2 people |
+| Gandhi's India, 1930 (first try) | Stopped by hand | - | - | 23 | A writer and the reviewer passed the same section back and forth |
+| Gandhi's India, 1930 (second try) | Merged; trial run passed, 4 of 4 people acted | 112 | 54 min | 9 | 8 coherent places; Hindu Nationalists, Communist Party, Muslim League; 4 people |
+| A Mars colony | Merged; trial run passed | 128 | 48 min | 15 | 3 people; one place named `resources: []}}}, ` |
+
+Every one of the 15 Mars problems was bookkeeping (a home that is not a place,
+a resource nobody defined, a stock at an unknown holder, two groups of places
+with no road between them), and a second repair cleared all of them. What each
+build exposed, and the fix now in the code:
+
+| Seen live | Fix |
+|---|---|
+| A 7B model returns sections in near-miss shapes (`places` as a dict, `name` as `title`) | The exact shape of each section in the brief; near-miss field names normalised; a section below a minimum (premise without a date or a place) refused |
+| Long lists cut off mid-reply | Append mode: a writer can add to a list over several calls; a nudge when a list is short of its target |
+| The lead planned too little or in the wrong order | The foreman validates the plan and completes it: a task per missing section, review after every section, digest after review |
+| Writers asked the user "which section next?" or "is this OK?" | Process and confirmation questions refused; a writer may only ask with options; three questions per build |
+| A review sent the same section back again and again | One fix request per section per review; at most two change rounds |
+| Bookkeeping problems that a rewrite made worse | `repair()` fixes them by rule, openly, and now runs again after every fix round; places cut off together are joined to the rest; a name sharing a distinctive word with a place is that place |
+| JSON leaking into a name | A place whose name holds `{`, `}`, `[` or `]` is dropped |
+| A problem the reviewer missed | A CI-style round: the checks' findings go back to the writer once as a "Fix" task |
+
+Still open: the casts are small (2 to 4 people where the brief asks for more),
+and Lucknow placed some sites outside the city. No hosted model has run a full
+build yet; the free OpenRouter quota ran out during the probes.
+
+<p>
+<img src="images/live-lucknow-tasks.jpg" width="49%" alt="The Lucknow build's tasks on Qwen 2.5 7B">
+<img src="images/live-lucknow-notes.jpg" width="49%" alt="The team's shared notes from that build">
+</p>
+<p>
+<img src="images/live-lucknow-town.jpg" width="49%" alt="The studio scene after the merge">
+<img src="images/live-lucknow-world.jpg" width="49%" alt="The merged Lucknow world, running">
+</p>
 
 ## v6.1: real teams on real models
 
@@ -200,9 +244,15 @@ Goal: readable at a glance, and pleasant.
 
 - Studio runs recorded and replayable: a replay of a build reproduces the draft
   with no model calls.
-- Postgres and a job queue; one worker per studio; resume by task, not by
-  restart of the whole run.
-- Many studios at once on one host, with fair sharing of the model.
+- **Built:** a job queue (`tinyworld/studio/queue.py`) and workers
+  (`python -m tinyworld.studio.worker`). A worker claims a build, keeps a lease
+  alive, and runs the team; a dead worker's build is re-queued and resumes from
+  the last saved task; a build that kills three workers fails. Fair sharing: the
+  next build comes from the tenant with the fewest running, and a cap limits
+  builds running together. `POST /api/studio/queue` and `GET /api/studio/queue`
+  queue and list builds.
+- **Not built:** Postgres. The queue is plain SQL with one atomic claim, so it
+  moves with a driver change and `FOR UPDATE SKIP LOCKED`.
 - **Exit:** kill the process mid-build; it resumes from the last finished task
   with no repeated model calls for finished work.
 

@@ -162,6 +162,8 @@ class Simulation:
             self.mind = ToolMind(self.agent)
         self._last_events: list[Event] | None = None
         self._last_step: int | None = None
+        # An Entropy that makes far-off senses unreliable; None leaves perception exact.
+        self.noise = None
 
     # -- who acts -------------------------------------------------------
 
@@ -234,6 +236,10 @@ class Simulation:
             after_seq=self._last_decided(entity.id), include_superseded=True,
         )
         if any(m.importance >= self.salience for m in fresh):
+            return "react", block
+        from tinyworld.world import drives
+
+        if drives.frustration(entity) >= 0.6:
             return "react", block
         return "routine", block
 
@@ -364,6 +370,14 @@ class Simulation:
         by_observer: dict[str, list[Observation]] = {}
         for observation in observations:
             by_observer.setdefault(observation.observer, []).append(observation)
+        noise = getattr(self, "noise", None)
+        if noise is not None:
+            from tinyworld.gm.perception import distort
+
+            # Drawn here, in a fixed order, before any model call can reorder things.
+            by_observer = {
+                who: [distort(o, noise) for o in by_observer[who]] for who in sorted(by_observer)
+            }
         rememberers = [
             state.entities[o] for o in sorted(by_observer)
             if o in state.entities and persona_of(state.entities[o]) is not None

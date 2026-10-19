@@ -5,12 +5,14 @@ import { showGenesis } from "./genesis.js";
 import { showWorld } from "./world.js";
 import { showHistory } from "./history.js";
 import { showStudio } from "./studio.js";
+import { showTown } from "./town.js";
 
 const view = document.getElementById("view");
 let teardown = null;
 
 const routes = [
   [/^#\/studio\/([^/]+)$/, (m) => showStudio(view, m[1])],
+  [/^#\/town\/([^/]+)$/, (m) => showTown(view, m[1])],
   [/^#\/world\/([^/]+)$/, (m) => showGenesis(view, m[1])],
   [/^#\/branch\/([^/]+)\/history$/, (m) => showHistory(view, m[1])],
   [/^#\/branch\/([^/]+)$/, (m) => showWorld(view, m[1])],

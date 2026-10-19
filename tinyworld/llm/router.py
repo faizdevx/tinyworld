@@ -97,6 +97,9 @@ class LLMConfig:
     effort: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_EFFORT))
     roles: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_ROLES))
     prices: dict[str, Price] = field(default_factory=lambda: dict(DEFAULT_PRICES))
+    # A resident can have a model of their own: {person id: model id}. Used for what they
+    # decide (``agent.`` roles); everything else about the world keeps its usual route.
+    agent_models: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def gemini(cls) -> "LLMConfig":
@@ -163,8 +166,10 @@ class LLMConfig:
                 best = prefix
         return self.roles[best] if best else self.roles.get("*", "standard")
 
-    def route(self, role: str) -> Route:
+    def route(self, role: str, agent: str | None = None) -> Route:
         tier = self.tier_for(role)
+        if agent and role.startswith("agent.") and agent in self.agent_models:
+            return Route(role, tier, self.agent_models[agent], self.effort.get(tier))
         return Route(role, tier, self.tiers[tier], self.effort.get(tier))
 
     def cost(
