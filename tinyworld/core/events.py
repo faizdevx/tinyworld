@@ -59,6 +59,7 @@ class Verb(str, Enum):
     JOIN = "join"
     LEAVE = "leave"
     PETITION = "petition"
+    EXPLORE = "explore"
     OTHER = "other"
 
 

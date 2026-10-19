@@ -69,7 +69,10 @@ def utter_effect(state: WorldState, agent: Entity, intent: Intent) -> tuple[fx.U
         if not addressee.alive:
             return None, f"{addressee.name} is dead"
         if utterance.channel != "written" and addressee.location != agent.location:
-            return None, f"{addressee.name} is not here"
+            from tinyworld.world import grid
+
+            if not (grid.has_grid(state) and grid.can_talk(state, agent, addressee)):
+                return None, f"{addressee.name} is not here"
     return (
         fx.Utter(
             speaker=agent.id,
@@ -172,6 +175,16 @@ def check(state: WorldState, intent: Intent) -> Verdict:
     if verb is Verb.MOVE:
         if target is None or target.kind != "place":
             return _impossible(intent, "that is not a place")
+        from tinyworld.world import grid, walking
+
+        if grid.has_grid(state) and grid.position_of(agent) is not None:
+            if target.id == agent.location and walking.route_of(agent) != target.id:
+                return _impossible(intent, f"already at {target.name}")
+            walk = walking.step(state, agent, target.id, resume=bool(intent.args.get("continue")))
+            if isinstance(walk, str):
+                return _impossible(intent, walk)
+            effects, narration, minutes = walk
+            return _resolved(intent, effects, narration, minutes)
         if target.id == agent.location:
             return _impossible(intent, f"already at {target.name}")
         route = state.path(agent.location, target.id)
@@ -206,6 +219,18 @@ def check(state: WorldState, intent: Intent) -> Verdict:
         if verb is Verb.REST and intent.args.get("sleep") is True:
             doing = "sleeps"
         return _resolved(intent, [], f"{agent.name} {doing}.", minutes)
+
+    if verb is Verb.EXPLORE:
+        from tinyworld.world import grid, walking
+
+        if not grid.has_grid(state):
+            return _impossible(intent, "there is no map to explore")
+        direction = str(intent.args.get("direction", "")).lower()
+        walk = walking.explore(state, agent, direction)
+        if isinstance(walk, str):
+            return _impossible(intent, walk)
+        effects, narration, minutes = walk
+        return _resolved(intent, effects, narration, minutes)
 
     if verb is Verb.PETITION:
         from tinyworld.world import petitions

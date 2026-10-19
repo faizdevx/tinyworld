@@ -84,7 +84,7 @@ class OpenAICompatClient:
                 {"role": "user", "content": request.user},
             ],
             "max_tokens": request.max_tokens,
-            "temperature": 0.7,
+            "temperature": 0.7 if request.temperature is None else request.temperature,
         }
         schema = provider_schema(request.schema)
         if fmt == "json_schema":

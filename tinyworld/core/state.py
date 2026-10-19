@@ -135,6 +135,45 @@ class Commitment(Model):
         return self
 
 
+CHUNK = 32
+GROUND, ROAD, WATER, WALL, FLOOR, DOOR, FIELD = ".", "=", "~", "#", ",", "+", '"'
+TERRAIN = {GROUND: "ground", ROAD: "road", WATER: "water", WALL: "wall", FLOOR: "floor", DOOR: "door", FIELD: "field"}
+WALKABLE = frozenset({GROUND, ROAD, FLOOR, DOOR, FIELD})
+
+
+class Region(Model):
+    """A rectangle of tiles (both corners included) that belongs to a place."""
+
+    place: EntityId
+    x0: int
+    y0: int
+    x1: int
+    y1: int
+
+    @model_validator(mode="after")
+    def _ordered(self):
+        if self.x1 < self.x0 or self.y1 < self.y0:
+            raise ValueError("a region's far corner comes after its near corner")
+        return self
+
+    def has(self, x: int, y: int) -> bool:
+        return self.x0 <= x <= self.x1 and self.y0 <= y <= self.y1
+
+
+class Chunk(Model):
+    """32 by 32 tiles: one character of terrain each, and the places they belong to."""
+
+    terrain: str = Field(default_factory=lambda: GROUND * (CHUNK * CHUNK))
+    # Later regions win where they overlap (a building inside a street block).
+    regions: list[Region] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _size(self):
+        if len(self.terrain) != CHUNK * CHUNK or any(c not in TERRAIN for c in set(self.terrain)):
+            raise ValueError("a chunk is 32 by 32 tiles of known terrain")
+        return self
+
+
 class WorldState(Model):
     sim_time: datetime
     entities: dict[EntityId, Entity] = Field(default_factory=dict)
@@ -144,6 +183,9 @@ class WorldState(Model):
     processes: dict[ProcessId, Process] = Field(default_factory=dict)
     commitments: dict[str, Commitment] = Field(default_factory=dict)
     rules: dict[str, JsonValue] = Field(default_factory=dict)
+    # The tile world, by chunk "cx,cy". Empty for worlds that are only a place graph.
+    grid: dict[str, Chunk] = Field(default_factory=dict)
+    grid_rev: int = 0
     seq: int = 0
 
     # -- queries ---------------------------------------------------------

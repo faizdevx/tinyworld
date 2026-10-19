@@ -53,6 +53,21 @@ def describe_place(state: WorldState, place_id: EntityId, *, viewer: str | None 
         "People here: "
         + (", ".join(f"{p.name} [{p.id}]" for p in people) if people else "nobody else")
     )
+    if viewer is not None and state.grid:
+        from tinyworld.world import grid, walking
+
+        me = state.entities[viewer]
+        where = walking.where_is(state, me)
+        if where:
+            lines.append("  " + where)
+        in_view = [(o, d) for o, d in grid.nearby(state, me) if o.location != place_id]
+        if in_view:
+            lines.append(
+                "In view: " + ", ".join(
+                    f"{o.name} [{o.id}] ({d} tiles away, at {name_of(state, o.location)})" for o, d in in_view[:6]
+                )
+                + f". You can speak to anyone within {grid.TALK_RANGE} tiles."
+            )
     bodies = [p for p in state.people_at(place_id, alive=False) if not p.alive]
     if bodies:
         lines.append("Dead here: " + ", ".join(f"{p.name} [{p.id}]" for p in bodies))

@@ -40,6 +40,7 @@ Actions (verb, then what to fill in):
 "days": n, "items": {id: n}, "helpers": [person ids], "idea": idea id, only to work out \
 a new idea}
 - petition: bring a need to the god. text = what you ask; args = {"kind": prayer | request | accusation | plea | bargain, "offering": what you give, optional}. Do this only when it matters to you and nothing else you can do will help
+- explore: walk to the edge of the known ground and look beyond. args = {"direction": "north" | "south" | "east" | "west"}
 - trade, use, make, attack, join, leave, other: target if any; describe it in `text`
 - rest, wait: nothing else needed
 
@@ -47,6 +48,13 @@ You may also `say` something while doing any other action.
 Use ids exactly as shown in [brackets], including the part before the colon (for example place:market_square, never just market_square). `text` is your own short account of what \
 you are trying to do and why; the referee reads it.
 `plan` is your next few intended steps, in order. Send a new plan only when it changes."""
+
+
+def temperature_of(agent_id: str) -> float:
+    """A fixed sampling temperature for each person, 0.6 to 1.0: some are steadier than others."""
+    import hashlib
+
+    return round(0.6 + 0.4 * (hashlib.sha1(agent_id.encode()).digest()[0] / 255), 2)
 
 
 def daypart(hour: int) -> str:
@@ -308,6 +316,7 @@ class Agent:
             context=context,
             fallback=Decision(verb=Verb.WAIT, text="unsure what to do"),
             max_tokens=1500,
+            temperature=temperature_of(entity.id),
             check=check,
         )
         decision = canonical(state, reply.value)

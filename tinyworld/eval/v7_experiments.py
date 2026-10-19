@@ -249,3 +249,73 @@ async def main(argv=None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(asyncio.run(main()))
+
+
+# -- phase 1 exit: asynchronous residents -----------------------------------
+
+
+def lockstep(session, after: int = 0) -> dict:
+    """How much of the town acts together. A tick makes everyone act at once (100%)."""
+    import json as _json
+
+    residents = len([p for p in session.state.people() if p.attrs.get("persona")])
+    sizes = [
+        len(_json.loads(r["args_json"])["order"])
+        for r in session.store.journal(session.branch_id) if r["op"] == "window"
+    ]
+    if not sizes:
+        return {"windows": 0}
+    return {
+        "windows": len(sizes),
+        "mean_share_of_residents_acting_per_window": round(sum(sizes) / len(sizes) / residents, 3),
+        "windows_where_most_residents_acted": round(sum(1 for n in sizes if n > residents / 2) / len(sizes), 3),
+    }
+
+
+async def experiment_async(hours: int = 48) -> dict:
+    from tinyworld.sim.clock import AsyncSimulation
+    from tinyworld.sim.replay import replay
+
+    base = berlin_session()
+    seq = base.state.seq
+    out = []
+    for name in ("a", "b"):
+        branch = base.fork(seq, name)
+        town = town_for(branch, chaos=0.5)
+        clocks = AsyncSimulation(town.sim, town.entropy)
+        town = Town(town.sim, town.entropy, clocks=clocks, chaos=0.5)
+        await town.advance(hours * 60)
+        out.append((branch, clocks))
+    ev = [[e.narration for e in b.store.events(b.branch_id, after=seq)] for b, _ in out]
+    rows = []
+    for (branch, clocks), narrations in zip(out, ev):
+        report = await replay(branch.store, branch.branch_id, LLMConfig())
+        rows.append({
+            "events": len(narrations), "windows": clocks.windows, "decisions": clocks.committed,
+            "decided_again_after_the_world_moved": clocks.redecided,
+            "lockstep": lockstep(branch, seq),
+            "replay_identical": report.identical, "first_difference": report.first_difference,
+        })
+    same = sum(1 for x, y in zip(ev[0], ev[1]) if x == y)
+    return {"runs": rows, "the_two_runs_diverge": ev[0] != ev[1],
+            "share_of_events_with_the_same_words_in_the_same_place": round(same / max(1, min(len(ev[0]), len(ev[1]))), 3)}
+
+
+# -- worlds laid out on a tile map -------------------------------------------
+
+
+def fixture_session(module, store: Store | None = None, laid_out: bool = True) -> WorldSession:
+    """A prepared world (berlin or lucknow) from its bible, optionally laid out on a grid."""
+    from tinyworld.genesis import layout
+
+    store = store or Store()
+    bible = Bible.model_validate(
+        copy.deepcopy({"premise": module.PREMISE, "divergence": module.DIVERGENCE, **module.SECTIONS})
+    )
+    drafts, _ = seeding.seed_drafts(bible)
+    world = store.create_world(module.PREMISE_TEXT, seeding.start_time(bible))
+    session = WorldSession(store, store.create_branch(world, "base", start_time=seeding.start_time(bible)))
+    session.commit(drafts)
+    if laid_out:
+        session.commit(layout.layout(session.state), atomic=False)
+    return session

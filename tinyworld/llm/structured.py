@@ -37,6 +37,17 @@ def extract_json(text: str) -> str:
     return text[start : end + 1]
 
 
+_SCHEMAS: dict = {}
+
+
+def _schema_of(schema) -> dict:
+    """The JSON schema of a reply type, made once. Callers must not change it."""
+    found = _SCHEMAS.get(schema)
+    if found is None:
+        found = _SCHEMAS[schema] = schema.model_json_schema()
+    return found
+
+
 class StructuredLLM:
     def __init__(
         self,
@@ -62,6 +73,7 @@ class StructuredLLM:
         fallback: T | Callable[[str], T],
         stable_context: str = "",
         max_tokens: int = 4000,
+        temperature: float | None = None,
         check: Callable[[T], str | None] | None = None,
     ) -> Structured[T]:
         """Call the model for ``role`` and validate the reply against ``schema``.
@@ -71,7 +83,7 @@ class StructuredLLM:
         After that ``fallback`` is returned with ``ok=False``.
         """
         route = self.config.route(role)
-        json_schema = schema.model_json_schema()
+        json_schema = _schema_of(schema)
         prompt = user
         error = ""
         trace_id: str | None = None
@@ -87,6 +99,7 @@ class StructuredLLM:
                 schema=json_schema,
                 schema_name=schema.__name__,
                 max_tokens=max_tokens,
+                temperature=temperature,
                 context=context,
             )
             try:

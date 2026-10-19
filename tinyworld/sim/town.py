@@ -61,6 +61,8 @@ class Town:
         god: Answerer | None = auto_god,
         chaos: float | None = None,
         write_petitions: bool = False,
+        clocks=None,
+        creators=None,
     ) -> None:
         # With a model, the petition is written by it from the person's situation.
         self.write_petitions = write_petitions and sim.llm is not None
@@ -70,6 +72,12 @@ class Town:
         self.petitioning = petitioning
         self.paper = paper
         self.god = god
+        # With ``clocks`` (an AsyncSimulation) residents live on their own clocks instead of ticks.
+        self.clocks = clocks
+        # The builders who answer when someone reaches the edge of the known ground.
+        self.creators = creators
+        if clocks is not None:
+            clocks.on_clock = self._after_clock
         self.editions: dict[str, newspaper.Edition] = {}
         self._paper_day: date | None = None
         if chaos is not None:
@@ -98,36 +106,92 @@ class Town:
     # -- one advance -----------------------------------------------------
 
     async def advance(self, minutes: int | None = None) -> TickResult:
+        if self.clocks is not None:
+            seq = self.session.state.seq
+            await self.clocks.run_for(minutes or 60)
+            return TickResult(seq, events=self.session.store.events(self.session.branch_id, after=seq))
         result = await self.sim.tick(minutes)
-        step = result.step_minutes or minutes or 60
-        state = self.session.state
-
-        fortune = chance.roll(state, step, self.entropy)
-        if fortune is not None:
-            events = self.commit([fortune.draft])
-            result.events += events
-            await self._witnessed(events)
-
-        if self.petitioning:
-            result.events += await self._petitions(result.tick_seq)
-            result.events += await self._answers()
-
-        if self.paper:
-            result.events += self._newspaper()
+        result.events += await self._after_clock(result.step_minutes or minutes or 60, result.tick_seq)
         return result
+
+    async def _after_clock(self, minutes: int, tick_seq: int | None = None) -> list[Event]:
+        """What the town adds each time the clock moves: fortune, petitions, answers, the paper."""
+        events: list[Event] = []
+        tick_seq = self.session.state.seq if tick_seq is None else tick_seq
+        fortune = chance.roll(self.session.state, minutes, self.entropy)
+        if fortune is not None:
+            made = self.commit([fortune.draft])
+            events += made
+            await self._witnessed(made)
+        if self.petitioning:
+            events += await self._petitions(tick_seq, minutes)
+            events += await self._answers()
+        if self.creators is not None:
+            events += await self._grow()
+        if self.paper:
+            events += self._newspaper()
+        return events
+
+    # -- the map grows -----------------------------------------------------
+
+    async def _grow(self) -> list[Event]:
+        """Raise a request for ground someone can see, and answer one waiting request."""
+        from tinyworld.core.reducers import EffectError, apply_effect
+        from tinyworld.genesis import layout
+        from tinyworld.world import frontier
+
+        events: list[Event] = []
+        state = self.session.state
+        if not state.grid:
+            return events
+        for key, person in frontier.scan(state):
+            draft = frontier.request_draft(self.session.state, key, person, "seen")
+            if draft is not None:
+                events += self.commit([draft])
+        state = self.session.state
+        waiting = frontier.pending(state)
+        if not waiting:
+            return events
+        request = waiting[0]
+
+        def refuse(why: str) -> list[Event]:
+            return self.commit([EventDraft(
+                kind="system", actor="system", visibility="god_only",
+                effects=[frontier.settled_effect(self.session.state, request.chunk, "refused", [])],
+                narration=f"The ground at {request.chunk} stays unknown: {why}",
+            )])
+
+        result = await self.creators.answer(state, request, self.entropy, self.session.branch_id)
+        if isinstance(result, str):
+            return events + refuse(result)
+        try:
+            drafts = layout.extend(state, request.chunk, result.places, self.entropy)
+            working = state.model_copy(deep=True)
+            for draft in drafts:  # the reducers have the last word
+                for effect in draft.effects:
+                    apply_effect(working, effect)
+        except (ValueError, EffectError) as exc:
+            return events + refuse(f"it could not be laid out ({exc})")
+        names = [p.name for p in result.places]
+        drafts.append(EventDraft(
+            kind="system", actor="system", visibility="god_only",
+            effects=[frontier.settled_effect(state, request.chunk, "generated", names)],
+            narration=f"Chunk {request.chunk} is settled.",
+        ))
+        return events + self.commit(drafts)
 
     async def run(self, ticks: int, minutes: int | None = None) -> list[TickResult]:
         return [await self.advance(minutes) for _ in range(ticks)]
 
     # -- petitions -------------------------------------------------------
 
-    async def _petitions(self, tick_seq: int) -> list[Event]:
+    async def _petitions(self, tick_seq: int, minutes: int = 60) -> list[Event]:
         state = self.session.state
         intents = []
         for person in sorted(state.people(), key=lambda p: p.id):
             if persona_of(person) is None or not person.location:
                 continue
-            if petitions.due_to_petition(state, person, self.entropy):
+            if petitions.due_to_petition(state, person, self.entropy, minutes):
                 if self.write_petitions:
                     text, args = await petitions.compose_with_model(
                         self.sim.llm, state, person, self.sim.recent_actions(person.id),
@@ -137,9 +201,12 @@ class Town:
                 else:
                     text, args = petitions.compose(person, self.entropy)
                 intents.append(Intent(agent=person.id, verb=Verb.PETITION, args=args, text=text))
-        if not intents:
-            return []
-        return await self.apply(intents, tick_seq)
+        events: list[Event] = []
+        # One at a time and in a recorded order: a batch would be shuffled by the Game Master's
+        # seed, which a replay does not share.
+        for intent in self.entropy.order("petition.order", intents):
+            events += await self.apply([intent], tick_seq)
+        return events
 
     async def apply(self, intents: list[Intent], tick_seq: int) -> list[Event]:
         """Resident actions chosen by the town itself, through the Game Master like any other."""

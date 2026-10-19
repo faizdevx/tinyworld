@@ -35,6 +35,7 @@ DEFAULT_ATTRS: dict[str, dict[str, object]] = {
         "x": int,
         "y": int,
         "last_petition": str,
+        "route": dict,
     },
     "place": {
         "description": str,

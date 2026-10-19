@@ -149,6 +149,12 @@ def perceive(event: Event, state: WorldState) -> list[Observation]:
     for effect in event.effects:
         if isinstance(effect, fx.MoveEntity) and effect.to not in scenes:
             scenes.append(effect.to)  # an arrival is seen where it ends
+        if isinstance(effect, fx.SetPosition):
+            from tinyworld.world import grid as tiles
+
+            ends = tiles.place_at(state, effect.x, effect.y)
+            if ends and ends not in scenes:
+                scenes.append(ends)
     if not scenes:
         return list(found.values())
 
@@ -196,6 +202,39 @@ def perceive(event: Event, state: WorldState) -> list[Observation]:
                         participants=[],
                     )
                 )
+    if state.grid and actor is not None and actor.kind == "person":
+        from tinyworld.world import grid as tiles
+
+        where = tiles.position_of(actor)
+        if where is not None:
+            for person in living:
+                if person.id in found:
+                    continue
+                there = tiles.position_of(person)
+                if there is None:
+                    continue
+                if tiles.sees(state, where, there):
+                    if utterances:
+                        if tiles.hears(state, where, there, loud):
+                            add(observation(person.id, "auditory", CONFIDENCE["seen_from_afar"]))
+                        else:
+                            add(
+                                observation(
+                                    person.id, "visual", CONFIDENCE["seen_from_afar"],
+                                    text=f"{name_of(state, event.actor)} is talking at {place_name}.",
+                                    claims=[],
+                                )
+                            )
+                    else:
+                        add(observation(person.id, "visual", CONFIDENCE["seen_from_afar"]))
+                elif loud and tiles.hears(state, where, there, True):
+                    add(
+                        observation(
+                            person.id, "auditory", CONFIDENCE["heard_from_afar"],
+                            text=f"A commotion is heard from {place_name}.",
+                            participants=[],
+                        )
+                    )
     return list(found.values())
 
 

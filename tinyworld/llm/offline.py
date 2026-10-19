@@ -55,6 +55,10 @@ def offline_llm(get_state: Callable[[], WorldState], seed: str = "offline") -> F
         rng = seeded(seed, request.context.tick_seq, agent_id)
         here = agent.location
         others = [p for p in state.people_at(here) if p.id != agent_id]
+        if state.grid:
+            from tinyworld.world import grid
+
+            others = [o for o, d in grid.nearby(state, agent, grid.TALK_RANGE)] or others
         exits = sorted(state.neighbors(here))
         works = [
             p for p in state.processes.values()
@@ -85,6 +89,13 @@ def offline_llm(get_state: Callable[[], WorldState], seed: str = "offline") -> F
                 "target": rng.choice(others).id,
                 "args": {"item": item, "quantity": 1},
                 "text": "share a little of what I have",
+            }
+        if state.grid and 0.92 <= roll < 0.97:
+            return {
+                "thought": "What is out there?",
+                "verb": "explore",
+                "args": {"direction": rng.choice(["north", "south", "east", "west"])},
+                "text": "look beyond the edge of town",
             }
         if exits and roll < 0.92:
             return {

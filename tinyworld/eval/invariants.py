@@ -102,6 +102,29 @@ def check_event(before: WorldState, event: Event, after: WorldState) -> list[Vio
         ):
             violation("location", f"{person.name} is at {location}, which is not a place")
 
+    if after.grid:
+        from tinyworld.world import grid
+
+        stood = {}
+        for person in after.people():
+            spot = grid.position_of(person)
+            if spot is None:
+                continue
+            if not grid.walkable(after, *spot):
+                violation("position", f"{person.name} stands on ground that cannot be walked on {spot}")
+            elif grid.place_at(after, *spot) != person.location:
+                violation("position", f"{person.name} is at {person.location} but stands in {grid.place_at(after, *spot)}")
+            stood.setdefault(spot, []).append(person.name)
+        for spot, names in stood.items():
+            if len(names) > 3:
+                violation("position", f"{len(names)} people crowd one tile {spot}")
+        for effect in event.effects:
+            if isinstance(effect, fx.SetPosition):
+                moved = before.entities.get(effect.entity)
+                start = grid.position_of(moved) if moved is not None else None
+                if start is not None and grid.distance(start, (effect.x, effect.y)) > grid.MAX_STEP:
+                    violation("movement", f"{effect.entity} jumped farther than anyone can walk")
+
     before_totals, after_totals = _totals(before), _totals(after)
     declared = _declared_changes(before, event)
     for item in set(before_totals) | set(after_totals) | set(declared):

@@ -23,6 +23,7 @@ from tinyworld.llm.structured import StructuredLLM
 from tinyworld.llm.trace import ReplayLLM, Tracer
 from tinyworld.llm.types import CallContext
 from tinyworld.sim.budget import Budget
+from tinyworld.sim.clock import advance_world, settle_intents
 from tinyworld.sim.loop import Simulation
 from tinyworld.sim.step import apply_intents
 from tinyworld.sim.timeskip import TimeSkip
@@ -111,6 +112,12 @@ async def replay(
         elif op == "budget":
             budget.run_cap = args["run_cap"]
             budget.agent_cap = args["agent_cap"]
+        elif op == "clock":
+            await advance_world(sim, args["minutes"], args["tick_seq"])
+        elif op == "async_intents":
+            await settle_intents(
+                sim, _INTENTS.validate_python(args["intents"]), args["tick_seq"], args.get("causes")
+            )
         elif op == "drafts":
             drafts = [EventDraft.model_validate(d) for d in args["drafts"]]
             events = session.commit(drafts, atomic=False).events

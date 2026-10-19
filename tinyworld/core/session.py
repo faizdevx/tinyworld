@@ -83,7 +83,6 @@ class WorldSession:
                 seq=working.seq + 1,
                 sim_time=end_time(working, draft.effects),
             )
-            backup = None if atomic else working.model_copy(deep=True)
             try:
                 if any(not 0 < cause < event.seq for cause in event.causes):
                     raise EffectError("an event can only be caused by earlier events")
@@ -98,7 +97,10 @@ class WorldSession:
             except EffectError as exc:
                 if atomic:
                     raise CommitError(str(exc)) from exc
-                working = backup
+                # A copy before every draft is the dear way; undo by starting again and re-applying.
+                working = self.state.model_copy(deep=True)
+                for done in result.events:
+                    apply_event_in_place(working, done, self.registry)
                 result.rejected.append((draft, str(exc)))
                 continue
             result.events.append(event)

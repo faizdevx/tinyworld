@@ -236,7 +236,7 @@ def compose(person: Entity, entropy, kind: str | None = None) -> tuple[str, dict
     return "I do not know what I am asking for. Hear me.", {"kind": "prayer"}
 
 
-def due_to_petition(state: WorldState, person: Entity, entropy) -> bool:
+def due_to_petition(state: WorldState, person: Entity, entropy, minutes: int = 60) -> bool:
     """A resident decides to ask, with a recorded draw. Cooldown and one-at-a-time hold."""
     if not person.alive or persona_of(person) is None:
         return False
@@ -245,7 +245,7 @@ def due_to_petition(state: WorldState, person: Entity, entropy) -> bool:
     last = last_filed(state, person.id)
     if last is not None and state.sim_time - last < COOLDOWN:
         return False
-    return entropy.chance("petition", urgency(state, person) * 0.25)
+    return entropy.chance("petition", min(0.9, urgency(state, person) * 0.25 * minutes / 60))
 
 
 # -- a model writes the petition -------------------------------------------
